@@ -23,13 +23,19 @@ public class Bootstrap implements ServiceSetup {
 
   @Override
   public void onStartup() {
-    // FIXME: document indexing should be triggered from external call
-    //  for example: when new documents are published.
-    timerScheduler.startSingleTimer(
-      CreateEmbeddingsAction.id,
-      Duration.ofSeconds(1), // run index on bootstrapping
-      componentClient.forTimedAction().method(CreateEmbeddingsAction::create).deferred()
-    );
+    if (KeyUtils.hasValidKeys()) {
+      // FIXME: document indexing should be triggered from external call
+      //  for example: when new documents are published.
+      timerScheduler.startSingleTimer(
+        CreateEmbeddingsAction.id,
+        Duration.ofSeconds(1), // run index on bootstrapping
+        componentClient.forTimedAction().method(CreateEmbeddingsAction::create).deferred()
+      );
+    } else {
+      System.err.println("No API keys found. When running locally, make sure you have a " + ".env.local file located under " +
+        "src/main/resources/ (see src/main/resources/.env.example). When running in " + "production, make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
+      System.exit(1);
+    }
   }
 
   @Override
