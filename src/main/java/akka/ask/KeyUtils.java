@@ -14,6 +14,15 @@ public class KeyUtils {
     return readKey("OPENAI_API_KEY");
   }
 
+
+  public static boolean hasValidKeys() {
+    try {
+      return !readMongoDbUri().isEmpty() && !readOpenAiKey().isEmpty();
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
   private static String readKey(String key) {
 
     // first read from env var
@@ -34,7 +43,6 @@ public class KeyUtils {
         throw new RuntimeException(e);
       }
     }
-
     return value;
   }
 }
