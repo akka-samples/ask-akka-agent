@@ -1,38 +1,19 @@
 package akka.ask.application;
 
 import akka.Done;
-import akka.ask.KeyUtils;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.client.ComponentClient;
 import akka.javasdk.timedaction.TimedAction;
 import akka.javasdk.timer.TimerScheduler;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
 import com.typesafe.config.Config;
-import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.DocumentLoader;
-import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.document.parser.TextDocumentParser;
-import dev.langchain4j.data.document.source.FileSystemSource;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModelName;
-import dev.langchain4j.store.embedding.mongodb.MongoDbEmbeddingStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+// TODO: refactor this to Workflow
+//  This action is extremely inefficient. Instead we need a workflow that will index the files individually.
+//  Spawn as many futures and collect the results.
 @ComponentId("create-embeddings-action")
 public class CreateEmbeddingsAction extends TimedAction {
 
@@ -43,9 +24,6 @@ public class CreateEmbeddingsAction extends TimedAction {
   // settings defining the indexing frequency
   public static String indexIntervalKey = "indexing.internal";
 
-  //
-  // FIXME: maybe we want to make this configurable?
-  private int segmentSize = 1000;
 
   private final ComponentClient componentClient;
   private final TimerScheduler timerScheduler;
@@ -54,7 +32,8 @@ public class CreateEmbeddingsAction extends TimedAction {
 
   public CreateEmbeddingsAction(ComponentClient componentClient,
                                 TimerScheduler timerScheduler,
-                                Config config, RagIndexing ragIndexing) {
+                                Config config,
+                                RagIndexing ragIndexing) {
     this.componentClient = componentClient;
     this.timerScheduler = timerScheduler;
     this.config = config;

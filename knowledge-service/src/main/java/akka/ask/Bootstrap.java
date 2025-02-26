@@ -9,7 +9,6 @@ import akka.javasdk.client.ComponentClient;
 import akka.javasdk.timer.TimerScheduler;
 
 import java.time.Duration;
-import java.util.Set;
 
 @Setup
 public class Bootstrap implements ServiceSetup {
@@ -24,8 +23,8 @@ public class Bootstrap implements ServiceSetup {
 
   @Override
   public void onStartup() {
-
-    // FIXME: retry until call is confirmed to be scheduled
+    // FIXME: document indexing should be triggered from external call
+    //  for example: when new documents are published.
     timerScheduler.startSingleTimer(
       CreateEmbeddingsAction.id,
       Duration.ofSeconds(1), // run index on bootstrapping
