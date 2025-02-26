@@ -1,4 +1,4 @@
-package akka.ask.application;
+package akka.ask.indexer.application;
 
 import akka.Done;
 import akka.javasdk.annotations.ComponentId;

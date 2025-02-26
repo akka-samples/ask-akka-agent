@@ -1,7 +1,8 @@
-package akka.ask.application;
+package akka.ask.indexer.application;
 
 import akka.Done;
-import akka.ask.KeyUtils;
+import akka.ask.common.KeyUtils;
+import akka.ask.common.OpenAiUtils;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import dev.langchain4j.data.document.BlankDocumentException;

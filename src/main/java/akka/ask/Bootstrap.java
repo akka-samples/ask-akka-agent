@@ -1,7 +1,8 @@
 package akka.ask;
 
-import akka.ask.application.CreateEmbeddingsAction;
-import akka.ask.application.RagIndexing;
+import akka.ask.common.KeyUtils;
+import akka.ask.indexer.application.CreateEmbeddingsAction;
+import akka.ask.indexer.application.RagIndexing;
 import akka.javasdk.DependencyProvider;
 import akka.javasdk.ServiceSetup;
 import akka.javasdk.annotations.Setup;
@@ -34,7 +35,6 @@ public class Bootstrap implements ServiceSetup {
     } else {
       System.err.println("No API keys found. When running locally, make sure you have a " + ".env.local file located under " +
         "src/main/resources/ (see src/main/resources/.env.example). When running in " + "production, make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
-      System.exit(1);
     }
   }
 

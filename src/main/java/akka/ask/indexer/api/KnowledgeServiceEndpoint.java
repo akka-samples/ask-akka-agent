@@ -1,17 +1,12 @@
-package akka.ask.api;
+package akka.ask.indexer.api;
 
-import akka.ask.application.OpenAiUtils;
+import akka.ask.common.OpenAiUtils;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.HttpEndpoint;
-import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.Post;
 import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.CompletionStage;
-import static java.util.concurrent.CompletableFuture.completedStage;
 
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api/ask/akka")

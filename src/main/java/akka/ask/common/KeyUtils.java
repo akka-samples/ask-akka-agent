@@ -1,4 +1,6 @@
-package akka.ask;
+package akka.ask.common;
+
+import akka.ask.Bootstrap;
 
 import java.io.IOException;
 import java.io.InputStream;
