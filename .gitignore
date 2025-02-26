@@ -22,3 +22,15 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+
+# Ignore all files in .idea directory
+.idea/*
+
+# Except for .idea/runConfigurations/Run_locally.xml
+!.idea/runConfigurations/
+!.idea/runConfigurations/Run_locally.xml
+
+src/main/resources/.env.local
+target
+
