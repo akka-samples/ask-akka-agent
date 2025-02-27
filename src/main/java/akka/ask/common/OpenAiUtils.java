@@ -5,6 +5,7 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModelName;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModelName;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenizer;
 
 public class OpenAiUtils {
@@ -12,11 +13,20 @@ public class OpenAiUtils {
   // using TEXT_EMBEDDING_3_SMALL because of 'demo' key
   final private static OpenAiEmbeddingModelName embeddingModelName = OpenAiEmbeddingModelName.TEXT_EMBEDDING_3_SMALL;
 
+  final private static OpenAiChatModelName chatModelName = OpenAiChatModelName.GPT_3_5_TURBO;
+
   // FIXME: make this a singleton?
   public static OpenAiChatModel chatModel() {
     return OpenAiChatModel.builder()
       .apiKey(KeyUtils.readOpenAiKey())
-      .modelName(OpenAiChatModelName.GPT_4_O_MINI)
+      .modelName(chatModelName)
+      .build();
+  }
+
+  public static OpenAiStreamingChatModel streamingChatModel() {
+    return OpenAiStreamingChatModel.builder()
+      .apiKey(KeyUtils.readOpenAiKey())
+      .modelName(chatModelName)
       .build();
   }
 

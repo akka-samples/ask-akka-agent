@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "akka.ask.agent.api";
+
+package akka.ask.agent.api;
+
+message QueryRequest {
+  string sessionId = 1;
+  string question = 2;
+}
+
+message QueryResponse {
+  string answer = 1;
+}
+
+service AskGrpcEndpoint {
+  rpc Ask (QueryRequest) returns (stream QueryResponse) {}
+}

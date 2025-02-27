@@ -52,7 +52,7 @@ public class SessionWorkflow extends Workflow<SessionState> {
 
     var chatMemory =
       MessageWindowChatMemory.builder()
-        .maxMessages(10)
+        .maxMessages(500)
         .build();
 
     var contentRetriever = EmbeddingStoreContentRetriever.builder()

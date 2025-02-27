@@ -1,5 +1,6 @@
 package akka.ask.agent.api;
 
+import akka.Done;
 import akka.ask.agent.application.SessionWorkflow;
 import akka.ask.agent.domain.RunQuery;
 import akka.ask.common.MongoDbUtils;
@@ -59,6 +60,8 @@ public class AskEndpoint {
     var contentRetriever = EmbeddingStoreContentRetriever.builder()
       .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
       .embeddingModel(OpenAiUtils.embeddingModel())
+      .maxResults(1)
+      .minScore(0.8)
       .build();
 
     this.assistant =
@@ -105,5 +108,10 @@ public class AskEndpoint {
       Duration.ofSeconds(10), // maxBackoff
       0.2, // backoff factor
       materializer.system());
+  }
+
+  @Post("/stream")
+  public Done askStream(Question q) {
+    return Done.getInstance();
   }
 }
