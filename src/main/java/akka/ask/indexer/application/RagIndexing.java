@@ -40,49 +40,54 @@ public class RagIndexing {
   }
 
   public CompletionStage<Done> indexDocuments() {
+    // FIXME: path to docs must be configurable
+    var documentsDirectoryPath = getClass().getClassLoader().getResource("flat-doc").getPath();
+    start(documentsDirectoryPath);
+    return CompletableFuture.completedFuture(Done.getInstance());
+  }
+
+  // FIXME: terrible blocking code
+  private void start(String documentsDirectoryPath) {
 
     var embeddingModel = OpenAiUtils.embeddingModel();
 
-    // FIXME: terrible blocking code running inside action
-    try (MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri())) {
+    // FIXME: runaway future - we will fix this later with a Workflow
+    CompletableFuture.runAsync(() -> {
+      try (MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri())) {
+        var embeddingStore =
+          MongoDbEmbeddingStore.builder()
+            .fromClient(mongoClient)
+            .databaseName("akka-docs")
+            .collectionName("embeddings")
+            .indexName("default")
+            .createIndex(true)
+            .build();
 
-      var embeddingStore =
-        MongoDbEmbeddingStore.builder()
-          .fromClient(mongoClient)
-          .databaseName("akka-docs")
-          .collectionName("embeddings")
-          .indexName("default")
-          .createIndex(true)
-          .build();
+        logger.debug("Loading documents from: '{}'", documentsDirectoryPath);
 
-      // FIXME: path to docs must be configurable
-      var documentsDirectoryPath = getClass().getClassLoader().getResource("flat-doc").getPath();
-      logger.debug("Loading documents from: '{}'", documentsDirectoryPath);
+        // load documents
+        List<Document> documents = loadMarkdownDocuments(documentsDirectoryPath);
+        logger.debug("Loaded {} documents", documents.size());
 
-      // load documents
-      List<Document> documents = loadMarkdownDocuments(documentsDirectoryPath);
-      logger.debug("Loaded {} documents", documents.size());
+        // create text segments and embed them
+        List<TextSegment> textSegments =
+          documents.stream()
+            .flatMap(doc -> splitter.split(doc).stream())
+            .toList();
+        logger.debug("Created {} segments", textSegments.size());
 
-      // create text segments and embed them
-      List<TextSegment> textSegments =
-        documents.stream()
-          .flatMap(doc -> splitter.split(doc).stream())
-          .toList();
-      logger.debug("Created {} segments", textSegments.size());
-
-      // embed and store segment
-      for (TextSegment segment : textSegments) {
-        var fileName = segment.metadata().getString(srcKey);
-        var response = embeddingModel.embed(segment);
-        logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
-          fileName,
-          response.tokenUsage().inputTokenCount(),
-          response.tokenUsage().outputTokenCount());
-        embeddingStore.add(response.content(), segment);
+        // embed and store segment
+        for (TextSegment segment : textSegments) {
+          var fileName = segment.metadata().getString(srcKey);
+          var response = embeddingModel.embed(segment);
+          logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
+            fileName,
+            response.tokenUsage().inputTokenCount(),
+            response.tokenUsage().outputTokenCount());
+          embeddingStore.add(response.content(), segment);
+        }
       }
-    }
-
-    return CompletableFuture.completedFuture(Done.getInstance());
+    });
   }
 
 
