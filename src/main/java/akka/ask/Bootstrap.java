@@ -27,6 +27,15 @@ public class Bootstrap implements ServiceSetup {
   public Bootstrap(
     ComponentClient componentClient,
     Materializer materializer) {
+
+    if (!KeyUtils.hasValidKeys()) {
+      System.err.println(
+        "No API keys found. When running locally, make sure you have a " + ".env.local file located under " +
+          "src/main/resources/ (see src/main/resources/.env.example). When running in production, " +
+          "make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
+      System.exit(1);
+    }
+
     this.componentClient = componentClient;
     this.mongoClient = MongoClients.create(KeyUtils.readMongoDbUri());
 
@@ -39,15 +48,6 @@ public class Bootstrap implements ServiceSetup {
       }
     );
 
-  }
-
-  @Override
-  public void onStartup() {
-    if (!KeyUtils.hasValidKeys()) {
-      System.err.println("No API keys found. When running locally, make sure you have a " + ".env.local file located" +
-        " under " +
-        "src/main/resources/ (see src/main/resources/.env.example). When running in " + "production, make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
-    }
   }
 
   @Override
