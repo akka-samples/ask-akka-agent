@@ -10,6 +10,8 @@ import akka.javasdk.annotations.Setup;
 import akka.stream.Materializer;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -17,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 @Setup
 public class Bootstrap implements ServiceSetup {
 
+  private final Logger logger = LoggerFactory.getLogger(getClass());
   private final MongoClient mongoClient;
 
   public Bootstrap(Materializer materializer) {
@@ -25,7 +28,7 @@ public class Bootstrap implements ServiceSetup {
     CoordinatedShutdown.get(materializer.system()).addTask(
       CoordinatedShutdown.PhaseServiceUnbind(),
       "close-client", ()-> {
-        System.out.println("Closing mongo client");
+        logger.debug("Closing mongo client");
         mongoClient.close();
         return CompletableFuture.completedFuture(Done.getInstance());
       }

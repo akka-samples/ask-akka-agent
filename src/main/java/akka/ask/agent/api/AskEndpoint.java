@@ -14,19 +14,54 @@ import org.slf4j.LoggerFactory;
 @HttpEndpoint("/api/ask")
 public class AskEndpoint {
 
-  public record Message(String txt){}
+  public record Question(String sessionId, String txt) {
+  }
+
+  @SystemMessage("You are a very enthusiastic Akka representative who loves to help people! " +
+    "Given the following sections from the Akka SDK documentation, text the text using only that information, outputted in markdown format. " +
+    "If you are unsure and the text is not explicitly written in the documentation, say:" +
+    "Sorry, I don't know how to help with that.")
+  interface Assistant {
+    Result<String> chat(String userInput);
+  }
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private final ComponentClient componentClient;
+  private final Materializer materializer;
+  private final MongoClient mongoClient;
 
 
-  public AskEndpoint(ComponentClient componentClient) {
+  private final Assistant assistant;
+
+  public AskEndpoint(ComponentClient componentClient, MongoClient mongoClient, Materializer materializer) {
     this.componentClient = componentClient;
+    this.mongoClient = mongoClient;
+    this.materializer = materializer;
+
+    var chatMemory =
+      MessageWindowChatMemory.builder()
+        .maxMessages(10)
+        .build();
+
+    var contentRetriever = EmbeddingStoreContentRetriever.builder()
+      .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
+      .embeddingModel(OpenAiUtils.embeddingModel())
+      .build();
+
+    this.assistant =
+      AiServices.builder(Assistant.class)
+        .chatLanguageModel(OpenAiUtils.chatModel())
+        .chatMemory(chatMemory)
+        .contentRetriever(contentRetriever)
+        .build();
+
   }
 
   @Post
-  public Done chat(Message input) {
-    logger.info("received input: {}", input);
+  public String chat(Question q) {
+    logger.info(" received input: {}", q);
+    return this.assistant.chat(q.txt()).content();
+  }
 
     componentClient
       .forWorkflow("abc")

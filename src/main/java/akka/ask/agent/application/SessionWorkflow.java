@@ -24,8 +24,9 @@ import java.util.concurrent.CompletionStage;
 public class SessionWorkflow extends Workflow<SessionState> {
 
   @SystemMessage("You are a very enthusiastic Akka representative who loves to help people! " +
-    "Given the following sections from the Akka SDK documentation, answer the question using only that information, outputted in markdown format. " +
-    "If you are unsure and the answer is not explicitly written in the documentation, say:" +
+    "Given the following sections from the Akka SDK documentation, answer the question using only that information, " +
+    "outputted in markdown format. If you are unsure and the answer is not explicitly written in the documentation, " +
+    "say:" +
     "Sorry, I don't know how to help with that.")
   interface Assistant {
     Result<String> chat(String userInput);
