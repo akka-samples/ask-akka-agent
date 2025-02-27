@@ -1,6 +1,5 @@
-package akka.ask.application;
+package akka.ask.common;
 
-import akka.ask.KeyUtils;
 import dev.langchain4j.model.Tokenizer;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModelName;
