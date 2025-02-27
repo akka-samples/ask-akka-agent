@@ -15,7 +15,10 @@ public class AskGrpcEndpointImpl implements AskGrpcEndpoint {
   public AskGrpcEndpointImpl(AgentService agentService) {
     this.agentService = agentService;
   }
-
+  /**
+   * This method runs the search and returns a streamed result.
+   * Each stream element is a single token (word) returned by the AI.
+   */
   @Override
   public Source<QueryResponse, NotUsed> ask(QueryRequest in) {
     return agentService
