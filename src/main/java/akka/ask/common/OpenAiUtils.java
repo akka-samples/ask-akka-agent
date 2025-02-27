@@ -13,7 +13,7 @@ public class OpenAiUtils {
   // using TEXT_EMBEDDING_3_SMALL because of 'demo' key
   final private static OpenAiEmbeddingModelName embeddingModelName = OpenAiEmbeddingModelName.TEXT_EMBEDDING_3_SMALL;
 
-  final private static OpenAiChatModelName chatModelName = OpenAiChatModelName.GPT_3_5_TURBO;
+  final private static OpenAiChatModelName chatModelName = OpenAiChatModelName.GPT_4_O_MINI;
 
   // FIXME: make this a singleton?
   public static OpenAiChatModel chatModel() {
@@ -38,7 +38,6 @@ public class OpenAiUtils {
   }
 
   public static Tokenizer buildTokenizer() {
-
     return new OpenAiTokenizer(embeddingModelName);
   }
 }

@@ -83,7 +83,10 @@ public class AskGrpcEndpointImpl implements AskGrpcEndpoint {
           return Optional.empty();
         }
       },
-      err -> Optional.of((Throwable) err),
+      err -> {
+        if (err instanceof Throwable) return Optional.of((Throwable) err);
+        else return Optional.empty();
+      },
       100,
       OverflowStrategy.dropHead()
     );
