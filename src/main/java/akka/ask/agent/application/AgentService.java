@@ -13,6 +13,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import org.slf4j.Logger;
@@ -35,6 +36,10 @@ public class AgentService {
   private final ComponentClient componentClient;
   private final EmbeddingStoreContentRetriever contentRetriever;
 
+  @SystemMessage("You are a very enthusiastic Akka representative who loves to help people! " +
+    "Given the following sections from the Akka SDK documentation, text the text using only that information, outputted in markdown format. " +
+    "If you are unsure and the text is not explicitly written in the documentation, say:" +
+    "Sorry, I don't know how to help with that.")
   interface Assistant {
     TokenStream chat(String message);
   }
@@ -95,8 +100,9 @@ public class AgentService {
     // later we use the 'store' to update the entity
     var chatMemoryStore = new ChatMemoryStore() {
 
-      // this is temp cache that survives only a single request
+
       // it's initially set to message history coming from the entity
+      // this is temp cache that survives only a single request
       private List<ChatMessage> localCache = messages;
 
       public List<ChatMessage> getMessages(Object memoryId) {
