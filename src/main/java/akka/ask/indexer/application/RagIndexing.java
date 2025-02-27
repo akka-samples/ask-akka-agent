@@ -1,10 +1,9 @@
 package akka.ask.indexer.application;
 
 import akka.Done;
-import akka.ask.common.KeyUtils;
+import akka.ask.common.MongoDbUtils;
 import akka.ask.common.OpenAiUtils;
 import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
 import dev.langchain4j.data.document.BlankDocumentException;
 import dev.langchain4j.data.document.DefaultDocument;
 import dev.langchain4j.data.document.Document;
@@ -31,11 +30,13 @@ import java.util.stream.Stream;
 public class RagIndexing {
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
-  private final DocumentSplitter splitter;
+  final private MongoClient mongoClient;
+  final private DocumentSplitter splitter;
   // metadata key used to store file name
-  private final String srcKey = "src";
+  final private String srcKey = "src";
 
-  public RagIndexing() {
+  public RagIndexing(MongoClient mongoClient) {
+    this.mongoClient = mongoClient;
     this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer());
   }
 
@@ -53,7 +54,6 @@ public class RagIndexing {
 
     // FIXME: runaway future - we will fix this later with a Workflow
     CompletableFuture.runAsync(() -> {
-      try (MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri())) {
         var embeddingStore =
           MongoDbEmbeddingStore.builder()
             .fromClient(mongoClient)
@@ -86,7 +86,6 @@ public class RagIndexing {
             response.tokenUsage().outputTokenCount());
           embeddingStore.add(response.content(), segment);
         }
-      }
     });
   }
 
