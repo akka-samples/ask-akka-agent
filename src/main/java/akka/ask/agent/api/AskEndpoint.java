@@ -1,14 +1,27 @@
 package akka.ask.agent.api;
 
-import akka.Done;
 import akka.ask.agent.application.SessionWorkflow;
 import akka.ask.agent.domain.RunQuery;
+import akka.ask.common.MongoDbUtils;
+import akka.ask.common.OpenAiUtils;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
+import akka.pattern.Patterns;
+import akka.stream.Materializer;
+import com.mongodb.client.MongoClient;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.Result;
+import dev.langchain4j.service.SystemMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionStage;
 
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api/ask")
@@ -63,11 +76,34 @@ public class AskEndpoint {
     return this.assistant.chat(q.txt()).content();
   }
 
-    componentClient
-      .forWorkflow("abc")
-      .method(SessionWorkflow::ask)
-      .invokeAsync(new RunQuery(input.txt()));
+  @Post("/flow")
+  public CompletionStage<String> askFlow(Question q) {
 
-    return Done.getInstance();
+    // send text
+    var answerIdFut = componentClient
+      .forWorkflow(q.sessionId)
+      .method(SessionWorkflow::ask)
+      .invokeAsync(new RunQuery(q.txt()));
+
+    // wait until response is available
+    return answerIdFut.thenCompose(answerId -> fetchAnswer(q.sessionId, answerId));
+  }
+
+  private CompletionStage<String> fetchAnswer(String sessionId, String answerId) {
+
+    Callable<CompletionStage<String>> attempt = () -> {
+      return componentClient
+        .forWorkflow(sessionId)
+        .method(SessionWorkflow::fetchAnswer)
+        .invokeAsync(answerId);
+    };
+
+    return Patterns.retry(
+      attempt,
+      10, // max attemps
+      Duration.ofSeconds(1), // minBackoff
+      Duration.ofSeconds(10), // maxBackoff
+      0.2, // backoff factor
+      materializer.system());
   }
 }

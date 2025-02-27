@@ -24,3 +24,17 @@ To create the vectorized index, call:
 ```shell
 curl -XPOST localhost:9000/api/index/start 
 ```
+
+# Query the AI
+
+This will run a query inside a session workflow with id "foo". The session contains the conversational history.
+
+```shell
+curl localhost:9000/api/ask/flow --header "Content-Type: application/json" -XPOST --data '{ "sessionId": "foo", "txt":"How many components exist in Akka 3?"}'
+```
+
+This will run a query directly from the Endpoint. No conversational history is kept.
+
+```shell
+curl localhost:9000/api/ask --header "Content-Type: application/json" -XPOST --data '{ "txt":"How many components exist in Akka 3?"}'
+```
