@@ -1,9 +1,12 @@
 package akka.ask.agent.application;
 
 import akka.Done;
+import akka.ask.agent.domain.SessionEvent;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.eventsourcedentity.EventSourcedEntity;
+import akka.javasdk.eventsourcedentity.EventSourcedEntityContext;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,28 +14,37 @@ import static akka.ask.agent.application.SessionEntity.MessageType.AI;
 import static akka.ask.agent.application.SessionEntity.MessageType.USER;
 
 @ComponentId("session-entity")
-public class SessionEntity extends EventSourcedEntity<SessionEntity.State, SessionEntity.Event> {
+public class SessionEntity extends EventSourcedEntity<SessionEntity.State, SessionEvent> {
+
+  private final String sessionId;
+
+  public SessionEntity(EventSourcedEntityContext context) {
+    this.sessionId = context.entityId();
+  }
 
   enum MessageType {
     AI,
     USER
   }
 
-  public record Message(String content, MessageType type){
+  public record SessionMessage(String content, long tokensUsed) {
+  }
+
+  public record Message(String content, MessageType type) {
 
     public boolean isUser() {
       return type == USER;
     }
+
     public boolean isAi() {
       return type == AI;
     }
   }
 
-
   public record State(List<Message> messages) {
     public static State empty() {
-     return new State(
-       new ArrayList<>());
+      return new State(
+          new ArrayList<>());
     }
 
     public State add(Message content) {
@@ -41,18 +53,23 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
     }
   }
 
-  sealed interface Event {}
-  public record AiMessageAdded(String content) implements Event{}
-  public record UserMessageAdded(String content) implements Event{}
-
-  public record Messages(List<Message> messages) {}
-
-  public Effect<Done> addUserMessage(String content) {
-    return effects().persist(new UserMessageAdded(content)).thenReply(__ -> Done.getInstance());
+  public record Messages(List<Message> messages) {
   }
 
-  public Effect<Done> addAiMessage(String content) {
-    return effects().persist(new AiMessageAdded(content)).thenReply(__ -> Done.getInstance());
+  // FIXME: it -looks- like we're not publishing an add user message for the
+  // user's initial query to the LLM. We want to make sure we're doing that.
+  public Effect<Done> addUserMessage(SessionMessage sessionMessage) {
+    return effects()
+        .persist(new SessionEvent.UserMessageAdded(sessionId, sessionMessage.content(), sessionMessage.tokensUsed(),
+            Instant.now()))
+        .thenReply(__ -> Done.getInstance());
+  }
+
+  public Effect<Done> addAiMessage(SessionMessage sessionMessage) {
+    return effects()
+        .persist(new SessionEvent.AiMessageAdded(sessionId, sessionMessage.content(), sessionMessage.tokensUsed(),
+            Instant.now()))
+        .thenReply(__ -> Done.getInstance());
   }
 
   public Effect<Messages> getHistory() {
@@ -65,10 +82,10 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   }
 
   @Override
-  public State applyEvent(SessionEntity.Event event) {
+  public State applyEvent(SessionEvent event) {
     return switch (event) {
-      case AiMessageAdded msg -> currentState().add(new Message(msg.content, AI));
-      case UserMessageAdded msg -> currentState().add(new Message(msg.content, USER));
+      case SessionEvent.AiMessageAdded msg -> currentState().add(new Message(msg.content(), AI));
+      case SessionEvent.UserMessageAdded msg -> currentState().add(new Message(msg.content(), USER));
     };
   }
 

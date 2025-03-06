@@ -1,9 +1,14 @@
 package akka.ask.agent.api;
 
 import akka.ask.agent.application.AgentService;
+import akka.ask.agent.application.ConversationHistoryView;
+import akka.ask.agent.application.SessionEntity;
+import akka.ask.agent.application.SessionEntity.Messages;
 import akka.javasdk.annotations.Acl;
+import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Post;
+import akka.javasdk.client.ComponentClient;
 import akka.stream.Materializer;
 
 import java.util.concurrent.CompletionStage;
@@ -12,16 +17,17 @@ import java.util.concurrent.CompletionStage;
 @HttpEndpoint("/api/ask")
 public class AskHttpEndpoint {
 
-
   public record QueryRequest(String sessionId, String question) {
   }
 
+  private final ComponentClient componentClient;
   private final AgentService agentService;
   private final Materializer materializer;
 
-  public AskHttpEndpoint(AgentService agentService, Materializer materializer) {
+  public AskHttpEndpoint(AgentService agentService, Materializer materializer, ComponentClient componentClient) {
     this.agentService = agentService;
     this.materializer = materializer;
+    this.componentClient = componentClient;
   }
 
   /**
@@ -30,10 +36,18 @@ public class AskHttpEndpoint {
   @Post
   public CompletionStage<String> ask(QueryRequest request) {
     return agentService
-      .ask(request.sessionId, request.question)
-       // concatenate all response tokens
-      .runFold(new StringBuffer(), (acc, elem) -> acc.append(elem.content()), materializer)
-      .thenApply(StringBuffer::toString);
+        .ask(request.sessionId, request.question)
+        // concatenate all response tokens
+        .runFold(new StringBuffer(), (acc, elem) -> acc.append(elem.content()), materializer)
+        .thenApply(StringBuffer::toString);
 
+  }
+
+  @Get("/sessions/{sessionId}")
+  public CompletionStage<ConversationHistoryView.ChatMessages> getSession(String sessionId) {
+
+    return componentClient.forView()
+        .method(ConversationHistoryView::getMessagesBySession)
+        .invokeAsync(sessionId);
   }
 }

@@ -1,6 +1,7 @@
 package akka.ask.agent.application;
 
 import akka.NotUsed;
+import akka.ask.agent.application.SessionEntity.SessionMessage;
 import akka.ask.common.MongoDbUtils;
 import akka.ask.common.OpenAiUtils;
 import akka.javasdk.client.ComponentClient;
@@ -27,7 +28,8 @@ import java.util.function.Consumer;
 
 /**
  * This services works an interface to the AI.
- * It returns the AI response as a stream and can be used to stream out a response
+ * It returns the AI response as a stream and can be used to stream out a
+ * response
  * in a GrpcEndpoint or as SSE in an HttpEndpoint.
  */
 public class AgentService {
@@ -37,9 +39,10 @@ public class AgentService {
   private final EmbeddingStoreContentRetriever contentRetriever;
 
   @SystemMessage("You are a very enthusiastic Akka representative who loves to help people! " +
-    "Given the following sections from the Akka SDK documentation, text the text using only that information, outputted in markdown format. " +
-    "If you are unsure and the text is not explicitly written in the documentation, say:" +
-    "Sorry, I don't know how to help with that.")
+      "Given the following sections from the Akka SDK documentation, answer the question using only that information, outputted in markdown format. "
+      +
+      "If you are unsure and the text is not explicitly written in the documentation, say:" +
+      "Sorry, I don't know how to help with that.")
   interface Assistant {
     TokenStream chat(String message);
   }
@@ -58,33 +61,33 @@ public class AgentService {
     this.componentClient = componentClient;
 
     this.contentRetriever = EmbeddingStoreContentRetriever.builder()
-      .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
-      .embeddingModel(OpenAiUtils.embeddingModel())
-      .maxResults(10)
-      .minScore(0.8)
-      .build();
+        .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
+        .embeddingModel(OpenAiUtils.embeddingModel())
+        .maxResults(10)
+        .minScore(0.8)
+        .build();
   }
 
-
-  private void addUserMessage(String sessionId, String content) {
+  private void addUserMessage(String sessionId, String content, long tokensUsed) {
     componentClient
-      .forEventSourcedEntity(sessionId)
-      .method(SessionEntity::addUserMessage).invokeAsync(content);
+        .forEventSourcedEntity(sessionId)
+        .method(SessionEntity::addUserMessage).invokeAsync(
+            new SessionMessage(content, tokensUsed));
   }
 
-  private void addAiMessage(String sessionId, String content) {
+  private void addAiMessage(String sessionId, String content, long tokensUsed) {
     componentClient
-      .forEventSourcedEntity(sessionId)
-      .method(SessionEntity::addAiMessage).invokeAsync(content);
+        .forEventSourcedEntity(sessionId)
+        .method(SessionEntity::addAiMessage).invokeAsync(
+            new SessionMessage(content, tokensUsed));
   }
 
   private CompletionStage<List<ChatMessage>> fetchHistory(String sessionId) {
     return componentClient
-      .forEventSourcedEntity(sessionId)
-      .method(SessionEntity::getHistory).invokeAsync()
-      .thenApply(messages -> messages.messages().stream().map(this::toChatMessage).toList());
+        .forEventSourcedEntity(sessionId)
+        .method(SessionEntity::getHistory).invokeAsync()
+        .thenApply(messages -> messages.messages().stream().map(this::toChatMessage).toList());
   }
-
 
   private ChatMessage toChatMessage(SessionEntity.Message msg) {
     return switch (msg.type()) {
@@ -99,7 +102,6 @@ public class AgentService {
     // initial state is set at creation (async call to entity)
     // later we use the 'store' to update the entity
     var chatMemoryStore = new ChatMemoryStore() {
-
 
       // it's initially set to message history coming from the entity
       // this is temp cache that survives only a single request
@@ -119,11 +121,15 @@ public class AgentService {
         // send message to entity, in a fire and forget fashion
         if (!messages.isEmpty()) {
           var last = messages.getLast();
+          // FIXME: make sure we get the real token usage value from the result stream so
+          // it's available for events and subsequently views and entity state
+          long tokens = 0; // TODO: get this real value from the message
+
           if (last instanceof AiMessage aiMessage) {
-            addAiMessage(sessionId, aiMessage.text());
+            addAiMessage(sessionId, aiMessage.text(), tokens);
           } else if (last instanceof UserMessage uMessage) {
             // only supporting test message for now
-            addUserMessage(sessionId, uMessage.singleText());
+            addUserMessage(sessionId, uMessage.singleText(), tokens);
           }
         }
       }
@@ -135,33 +141,31 @@ public class AgentService {
     };
 
     return MessageWindowChatMemory.builder()
-      .maxMessages(2000)
-      .chatMemoryStore(chatMemoryStore)
-      .build();
+        .maxMessages(2000)
+        .chatMemoryStore(chatMemoryStore)
+        .build();
   }
 
   private Assistant createAssistant(String sessionId, List<ChatMessage> messages) {
     return AiServices.builder(Assistant.class)
-      .streamingChatLanguageModel(OpenAiUtils.streamingChatModel())
-      .chatMemory(createChatMemory(sessionId, messages))
-      .contentRetriever(contentRetriever)
-      .build();
+        .streamingChatLanguageModel(OpenAiUtils.streamingChatModel())
+        .chatMemory(createChatMemory(sessionId, messages))
+        .contentRetriever(contentRetriever)
+        .build();
   }
 
   public Source<StreamedResponse, NotUsed> ask(String sessionId, String question) {
 
     var historyFut = fetchHistory(sessionId);
 
-    var assistantFut =
-      historyFut.thenApply(messages -> createAssistant(sessionId, messages));
+    var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, messages));
 
     return Source
-      .fromCompletionStage(assistantFut)
-      // once we have the assistant, we run the query that is itself streamed back
-      .flatMapConcat(assistant -> fromTokenStream(assistant.chat(question)));
+        .fromCompletionStage(assistantFut)
+        // once we have the assistant, we run the query that is itself streamed back
+        .flatMapConcat(assistant -> fromTokenStream(assistant.chat(question)));
 
   }
-
 
   /**
    * Converts a TokenStream to an Akka Source
@@ -169,22 +173,22 @@ public class AgentService {
   private static Source<StreamedResponse, NotUsed> fromTokenStream(TokenStream tokenStream) {
     // Create a source backed by an actor
     Source<StreamedResponse, akka.actor.ActorRef> source = Source.actorRef(
-      msg -> {
-        if (msg instanceof StreamedResponse res && res.finished) {
-          return Optional.of(akka.stream.CompletionStrategy.immediately());
-        } else {
-          return Optional.empty();
-        }
-      },
-      err -> {
-        if (err instanceof Throwable) return Optional.of((Throwable) err);
-        else return Optional.empty();
-      },
-      100,
-      OverflowStrategy.dropHead()
-    );
+        msg -> {
+          if (msg instanceof StreamedResponse res && res.finished) {
+            return Optional.of(akka.stream.CompletionStrategy.immediately());
+          } else {
+            return Optional.empty();
+          }
+        },
+        err -> {
+          if (err instanceof Throwable)
+            return Optional.of((Throwable) err);
+          else
+            return Optional.empty();
+        },
+        100,
+        OverflowStrategy.dropHead());
     ;
-
 
     return source.mapMaterializedValue(actorRef -> {
       // Set up a consumer that sends tokens to the actor
@@ -199,19 +203,20 @@ public class AgentService {
 
           // Process tokens until the stream is done
           tokenStream
-            .onPartialResponse(tokenConsumer)
-            .onCompleteResponse(res -> {
-              var lastMessage = StreamedResponse.lastMessage(res.aiMessage().text(), res.tokenUsage().totalTokenCount());
-              actorRef.tell(lastMessage, akka.actor.ActorRef.noSender());
-            })
-            .onError(error -> {
-              actorRef.tell(error, akka.actor.ActorRef.noSender());
-            })
-            .start();
+              .onPartialResponse(tokenConsumer)
+              .onCompleteResponse(res -> {
+                var lastMessage = StreamedResponse.lastMessage(res.aiMessage().text(),
+                    res.tokenUsage().totalTokenCount());
+                actorRef.tell(lastMessage, akka.actor.ActorRef.noSender());
+              })
+              .onError(error -> {
+                actorRef.tell(error, akka.actor.ActorRef.noSender());
+              })
+              .start();
 
         } catch (Exception e) {
           actorRef.tell(new akka.actor.Status.Failure(e),
-            akka.actor.ActorRef.noSender());
+              akka.actor.ActorRef.noSender());
         }
       });
 
