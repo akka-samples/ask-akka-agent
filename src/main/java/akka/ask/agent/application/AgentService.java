@@ -1,5 +1,6 @@
 package akka.ask.agent.application;
 
+import akka.Done;
 import akka.NotUsed;
 import akka.ask.agent.application.SessionEntity.SessionMessage;
 import akka.ask.common.MongoDbUtils;
@@ -34,7 +35,7 @@ import java.util.function.Consumer;
  */
 public class AgentService {
 
-  private final Logger logger = LoggerFactory.getLogger(getClass());
+  private final static Logger logger = LoggerFactory.getLogger(AgentService.class);
   private final ComponentClient componentClient;
   private final EmbeddingStoreContentRetriever contentRetriever;
 
@@ -46,6 +47,7 @@ public class AgentService {
   interface Assistant {
     TokenStream chat(String message);
   }
+
 
   public record StreamedResponse(String content, int tokens, boolean finished) {
     public static StreamedResponse partial(String content) {
@@ -68,18 +70,18 @@ public class AgentService {
         .build();
   }
 
-  private void addUserMessage(String sessionId, String content, long tokensUsed) {
-    componentClient
+  private CompletionStage<Done> addUserMessage(String sessionId, String content, long tokensUsed) {
+    return componentClient
         .forEventSourcedEntity(sessionId)
-        .method(SessionEntity::addUserMessage).invokeAsync(
-            new SessionMessage(content, tokensUsed));
+        .method(SessionEntity::addUserMessage)
+      .invokeAsync(new SessionMessage(content, tokensUsed));
   }
 
-  private void addAiMessage(String sessionId, String content, long tokensUsed) {
-    componentClient
+  private CompletionStage<Done> addAiMessage(String sessionId, String content, long tokensUsed) {
+    return componentClient
         .forEventSourcedEntity(sessionId)
-        .method(SessionEntity::addAiMessage).invokeAsync(
-            new SessionMessage(content, tokensUsed));
+        .method(SessionEntity::addAiMessage)
+      .invokeAsync(new SessionMessage(content, tokensUsed));
   }
 
   private CompletionStage<List<ChatMessage>> fetchHistory(String sessionId) {
@@ -100,38 +102,20 @@ public class AgentService {
 
     // this storage it not really a store, but an interface to the SessionEntity
     // initial state is set at creation (async call to entity)
-    // later we use the 'store' to update the entity
     var chatMemoryStore = new ChatMemoryStore() {
 
       // it's initially set to message history coming from the entity
       // this is temp cache that survives only a single request
       private List<ChatMessage> localCache = messages;
-
       public List<ChatMessage> getMessages(Object memoryId) {
         return localCache;
       }
 
       @Override
       public void updateMessages(Object memoryId, List<ChatMessage> messages) {
-        logger.info("Updating messages for session {}, total size {}", sessionId, messages.size());
-
+        logger.info("Updating messages for session '{}', total size {}", sessionId, messages.size());
         // update local cache for next iterations
         localCache = messages;
-
-        // send message to entity, in a fire and forget fashion
-        if (!messages.isEmpty()) {
-          var last = messages.getLast();
-          // FIXME: make sure we get the real token usage value from the result stream so
-          // it's available for events and subsequently views and entity state
-          long tokens = 0; // TODO: get this real value from the message
-
-          if (last instanceof AiMessage aiMessage) {
-            addAiMessage(sessionId, aiMessage.text(), tokens);
-          } else if (last instanceof UserMessage uMessage) {
-            // only supporting test message for now
-            addUserMessage(sessionId, uMessage.singleText(), tokens);
-          }
-        }
       }
 
       @Override
@@ -156,14 +140,23 @@ public class AgentService {
 
   public Source<StreamedResponse, NotUsed> ask(String sessionId, String question) {
 
-    var historyFut = fetchHistory(sessionId);
+    // TODO: make sure that user message is not persisted until LLM answer is added
+    var historyFut =
+      addUserMessage(sessionId, question, 0)
+        .thenCompose(__ -> fetchHistory(sessionId));
 
     var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, messages));
 
     return Source
-        .fromCompletionStage(assistantFut)
+        .completionStage(assistantFut)
         // once we have the assistant, we run the query that is itself streamed back
-        .flatMapConcat(assistant -> fromTokenStream(assistant.chat(question)));
+        .flatMapConcat(assistant -> fromTokenStream(assistant.chat(question)))
+        .mapAsync(1, res -> {
+          if (res.finished) // is the last message?
+            return addAiMessage(sessionId, res.content, res.tokens).thenApply(__ -> res);
+          else
+            return CompletableFuture.completedFuture(res);
+        });
 
   }
 
@@ -171,11 +164,13 @@ public class AgentService {
    * Converts a TokenStream to an Akka Source
    */
   private static Source<StreamedResponse, NotUsed> fromTokenStream(TokenStream tokenStream) {
+    record Stop() {} // stop message to signal end of stream
+
     // Create a source backed by an actor
     Source<StreamedResponse, akka.actor.ActorRef> source = Source.actorRef(
         msg -> {
-          if (msg instanceof StreamedResponse res && res.finished) {
-            return Optional.of(akka.stream.CompletionStrategy.immediately());
+          if (msg instanceof Stop) {
+            return Optional.of(akka.stream.CompletionStrategy.draining());
           } else {
             return Optional.empty();
           }
@@ -186,7 +181,7 @@ public class AgentService {
           else
             return Optional.empty();
         },
-        100,
+        1000,
         OverflowStrategy.dropHead());
     ;
 
@@ -205,9 +200,13 @@ public class AgentService {
           tokenStream
               .onPartialResponse(tokenConsumer)
               .onCompleteResponse(res -> {
-                var lastMessage = StreamedResponse.lastMessage(res.aiMessage().text(),
+                var lastMessage = StreamedResponse.lastMessage(
+                    res.aiMessage().text(),
                     res.tokenUsage().totalTokenCount());
+                // emit the last message
                 actorRef.tell(lastMessage, akka.actor.ActorRef.noSender());
+                // ensure stream ends
+                actorRef.tell(new Stop(), akka.actor.ActorRef.noSender());
               })
               .onError(error -> {
                 actorRef.tell(error, akka.actor.ActorRef.noSender());

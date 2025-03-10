@@ -9,9 +9,13 @@ import akka.javasdk.annotations.Consume;
 import akka.javasdk.annotations.Query;
 import akka.javasdk.view.TableUpdater;
 import akka.javasdk.view.View;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @ComponentId("view_chat_log")
 public class ConversationHistoryView extends View {
+
+  private final static Logger logger = LoggerFactory.getLogger(ConversationHistoryView.class);
 
   public record ChatMessage(String sessionId, String message, String origin, long timestamp) {
   }
@@ -28,6 +32,7 @@ public class ConversationHistoryView extends View {
   public static class ChatMessageUpdater extends TableUpdater<ChatMessage> {
 
     public Effect<ChatMessage> onEvent(SessionEvent event) {
+      logger.debug("Received session event: {}", event);
       return switch (event) {
         case SessionEvent.AiMessageAdded added -> aiMessage(added);
         case SessionEvent.UserMessageAdded added -> userMessage(added);

@@ -50,4 +50,5 @@ public class AskHttpEndpoint {
         .method(ConversationHistoryView::getMessagesBySession)
         .invokeAsync(sessionId);
   }
+
 }
