@@ -5,6 +5,8 @@ import akka.ask.agent.domain.SessionEvent;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.eventsourcedentity.EventSourcedEntity;
 import akka.javasdk.eventsourcedentity.EventSourcedEntityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -16,6 +18,7 @@ import static akka.ask.agent.application.SessionEntity.MessageType.USER;
 @ComponentId("session-entity")
 public class SessionEntity extends EventSourcedEntity<SessionEntity.State, SessionEvent> {
 
+  private final Logger logger = LoggerFactory.getLogger(getClass());
   private final String sessionId;
 
   public SessionEntity(EventSourcedEntityContext context) {
@@ -66,6 +69,7 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   }
 
   public Effect<Done> addAiMessage(SessionMessage sessionMessage) {
+    logger.debug("Received AI message {}", sessionMessage);
     return effects()
         .persist(new SessionEvent.AiMessageAdded(sessionId, sessionMessage.content(), sessionMessage.tokensUsed(),
             Instant.now()))
@@ -73,7 +77,9 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   }
 
   public Effect<Messages> getHistory() {
-    return effects().reply(new Messages(currentState().messages));
+    logger.debug("Getting history from {}", commandContext().entityId());
+    return
+      effects().reply(new Messages(currentState().messages));
   }
 
   @Override
@@ -83,6 +89,7 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
   @Override
   public State applyEvent(SessionEvent event) {
+    logger.debug("Session event: {}", event);
     return switch (event) {
       case SessionEvent.AiMessageAdded msg -> currentState().add(new Message(msg.content(), AI));
       case SessionEvent.UserMessageAdded msg -> currentState().add(new Message(msg.content(), USER));

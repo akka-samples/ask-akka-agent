@@ -50,4 +50,12 @@ public class AskHttpEndpoint {
         .method(ConversationHistoryView::getMessagesBySession)
         .invokeAsync(sessionId);
   }
+
+  @Get("/sessions/{sessionId}/strict")
+  public CompletionStage<Messages> getSessionStrict(String sessionId) {
+
+    return componentClient
+      .forEventSourcedEntity(sessionId)
+      .method(SessionEntity::getHistory).invokeAsync();
+  }
 }
