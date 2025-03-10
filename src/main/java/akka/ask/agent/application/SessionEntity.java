@@ -5,6 +5,7 @@ import akka.ask.agent.domain.SessionEvent;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.eventsourcedentity.EventSourcedEntity;
 import akka.javasdk.eventsourcedentity.EventSourcedEntityContext;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,10 +36,12 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
   public record Message(String content, MessageType type) {
 
+    @JsonIgnore
     public boolean isUser() {
       return type == USER;
     }
 
+    @JsonIgnore
     public boolean isAi() {
       return type == AI;
     }
