@@ -6,7 +6,6 @@ import akka.ask.agent.application.SessionEntity.SessionMessage;
 import akka.ask.common.MongoDbUtils;
 import akka.ask.common.OpenAiUtils;
 import akka.javasdk.client.ComponentClient;
-import akka.stream.OverflowStrategy;
 import akka.stream.javadsl.Source;
 import com.mongodb.client.MongoClient;
 import dev.langchain4j.data.message.AiMessage;
@@ -23,10 +22,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.function.Consumer;
 
 /**
  * This services works an interface to the AI.
@@ -52,19 +49,6 @@ public class AgentService {
   }
 
 
-  public record StreamedResponse(String content, int tokens, boolean finished) {
-    public static StreamedResponse partial(String content) {
-      return new StreamedResponse(content, 0, false);
-    }
-
-    public static StreamedResponse lastMessage(String content, int tokens) {
-      return new StreamedResponse(content, tokens, true);
-    }
-
-    public static StreamedResponse empty() {
-      return new StreamedResponse("", 0, true);
-    }
-  }
 
   public AgentService(ComponentClient componentClient, MongoClient mongoClient) {
     this.componentClient = componentClient;
@@ -157,6 +141,8 @@ public class AgentService {
   public Source<StreamedResponse, NotUsed> ask(String sessionId, String userQuestion) {
 
     // TODO: make sure that user message is not persisted until LLM answer is added
+    // maybe instead of sending question and answer apart, we should end it as one message to the entity.
+    // either both are added to the history or none
     var historyFut =
       addUserMessage(sessionId, userQuestion, 0)
         .thenCompose(__ -> fetchHistory(sessionId));
@@ -166,79 +152,23 @@ public class AgentService {
     return Source
         .completionStage(assistantFut)
         // once we have the assistant, we run the query that is itself streamed back
-      .flatMapConcat(assistant -> fromTokenStream(assistant.chat(userQuestion)))
+      .flatMapConcat(assistant -> AkkaStreamUtils.toAkkaSource(assistant.chat(userQuestion)))
         .mapAsync(1, res -> {
-          if (res.finished) // is the last message?
-            return addAiMessage(sessionId, res.content, res.tokens)
-               // since the full content has already be streamed,
+          if (res.finished()) {// is the last message?
+            logger.debug("finished message");
+            return addAiMessage(sessionId, res.content(), res.tokens())
+              // since the full content has already been streamed,
               // the last message can be transformed to an empty message
               .thenApply(__ -> StreamedResponse.empty());
-          else
+          }
+          else {
+            logger.debug("partial message {}", res);
+            // other messages are streamed out to the caller
+            // (those are the tokens emitted by the llm)
             return CompletableFuture.completedFuture(res);
+          }
         });
 
   }
 
-  /**
-   * Converts a TokenStream to an Akka Source
-   */
-  private static Source<StreamedResponse, NotUsed> fromTokenStream(TokenStream tokenStream) {
-    record Stop() {} // stop message to signal end of stream
-
-    // Create a source backed by an actor
-    Source<StreamedResponse, akka.actor.ActorRef> source = Source.actorRef(
-        msg -> {
-          if (msg instanceof Stop) {
-            return Optional.of(akka.stream.CompletionStrategy.draining());
-          } else {
-            return Optional.empty();
-          }
-        },
-        err -> {
-          if (err instanceof Throwable)
-            return Optional.of((Throwable) err);
-          else
-            return Optional.empty();
-        },
-        1000,
-        OverflowStrategy.dropHead());
-    ;
-
-    return source.mapMaterializedValue(actorRef -> {
-      // Set up a consumer that sends tokens to the actor
-      Consumer<String> tokenConsumer = token -> {
-        var res = StreamedResponse.partial(token);
-        actorRef.tell(res, akka.actor.ActorRef.noSender());
-      };
-
-      // Process the token stream
-      CompletableFuture.runAsync(() -> {
-        try {
-
-          // Process tokens until the stream is done
-          tokenStream
-              .onPartialResponse(tokenConsumer)
-              .onCompleteResponse(res -> {
-                var lastMessage = StreamedResponse.lastMessage(
-                    res.aiMessage().text(),
-                    res.tokenUsage().totalTokenCount());
-                // emit the last message
-                actorRef.tell(lastMessage, akka.actor.ActorRef.noSender());
-                // ensure stream ends
-                actorRef.tell(new Stop(), akka.actor.ActorRef.noSender());
-              })
-              .onError(error -> {
-                actorRef.tell(error, akka.actor.ActorRef.noSender());
-              })
-              .start();
-
-        } catch (Exception e) {
-          actorRef.tell(new akka.actor.Status.Failure(e),
-              akka.actor.ActorRef.noSender());
-        }
-      });
-
-      return NotUsed.getInstance();
-    });
-  }
 }

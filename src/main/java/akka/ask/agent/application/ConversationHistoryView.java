@@ -37,7 +37,6 @@ public class ConversationHistoryView extends View {
   public static class ChatMessageUpdater extends TableUpdater<ChatMessages> {
 
     public Effect<ChatMessages> onEvent(SessionEvent event) {
-      logger.debug("Received session event: {}", event);
       return switch (event) {
         case SessionEvent.AiMessageAdded added -> aiMessage(added);
         case SessionEvent.UserMessageAdded added -> userMessage(added);
