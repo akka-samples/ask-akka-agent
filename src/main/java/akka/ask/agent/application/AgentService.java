@@ -13,9 +13,10 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import org.slf4j.Logger;
@@ -39,11 +40,13 @@ public class AgentService {
   private final ComponentClient componentClient;
   private final EmbeddingStoreContentRetriever contentRetriever;
 
-  @SystemMessage("You are a very enthusiastic Akka representative who loves to help people! " +
-      "Given the following sections from the Akka SDK documentation, answer the question using only that information, outputted in markdown format. "
-      +
-      "If you are unsure and the text is not explicitly written in the documentation, say:" +
-      "Sorry, I don't know how to help with that.")
+  private final String sysMessage = """
+    You are a very enthusiastic Akka representative who loves to help people!
+    Given the following sections from the Akka SDK documentation, answer the question using only that information, outputted in markdown format. 
+    If you are unsure and the text is not explicitly written in the documentation, say:
+    Sorry, I don't know how to help with that.
+    """;
+
   interface Assistant {
     TokenStream chat(String message);
   }
@@ -56,6 +59,10 @@ public class AgentService {
 
     public static StreamedResponse lastMessage(String content, int tokens) {
       return new StreamedResponse(content, tokens, true);
+    }
+
+    public static StreamedResponse empty() {
+      return new StreamedResponse("", 0, true);
     }
   }
 
@@ -130,30 +137,42 @@ public class AgentService {
         .build();
   }
 
-  private Assistant createAssistant(String sessionId, List<ChatMessage> messages) {
-    return AiServices.builder(Assistant.class)
-        .streamingChatLanguageModel(OpenAiUtils.streamingChatModel())
-        .chatMemory(createChatMemory(sessionId, messages))
+  private Assistant createAssistant(String sessionId, String userQuestion, List<ChatMessage> messages) {
+
+    var chatLanguageModel = OpenAiUtils.streamingChatModel();
+
+    RetrievalAugmentor retrievalAugmentor =
+      DefaultRetrievalAugmentor.builder()
         .contentRetriever(contentRetriever)
         .build();
+
+    return AiServices.builder(Assistant.class)
+      .streamingChatLanguageModel(chatLanguageModel)
+      .chatMemory(createChatMemory(sessionId, messages))
+      .retrievalAugmentor(retrievalAugmentor)
+      .systemMessageProvider(__ -> sysMessage)
+      .build();
   }
 
-  public Source<StreamedResponse, NotUsed> ask(String sessionId, String question) {
+  public Source<StreamedResponse, NotUsed> ask(String sessionId, String userQuestion) {
 
     // TODO: make sure that user message is not persisted until LLM answer is added
     var historyFut =
-      addUserMessage(sessionId, question, 0)
+      addUserMessage(sessionId, userQuestion, 0)
         .thenCompose(__ -> fetchHistory(sessionId));
 
-    var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, messages));
+    var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, userQuestion, messages));
 
     return Source
         .completionStage(assistantFut)
         // once we have the assistant, we run the query that is itself streamed back
-        .flatMapConcat(assistant -> fromTokenStream(assistant.chat(question)))
+      .flatMapConcat(assistant -> fromTokenStream(assistant.chat(userQuestion)))
         .mapAsync(1, res -> {
           if (res.finished) // is the last message?
-            return addAiMessage(sessionId, res.content, res.tokens).thenApply(__ -> res);
+            return addAiMessage(sessionId, res.content, res.tokens)
+               // since the full content has already be streamed,
+              // the last message can be transformed to an empty message
+              .thenApply(__ -> StreamedResponse.empty());
           else
             return CompletableFuture.completedFuture(res);
         });
