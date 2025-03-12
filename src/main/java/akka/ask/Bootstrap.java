@@ -1,7 +1,5 @@
 package akka.ask;
 
-import akka.Done;
-import akka.actor.CoordinatedShutdown;
 import akka.ask.agent.application.AgentService;
 import akka.ask.common.KeyUtils;
 import akka.ask.indexer.application.RagIndexing;
@@ -14,8 +12,6 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.CompletableFuture;
 
 @Setup
 public class Bootstrap implements ServiceSetup {
@@ -38,16 +34,6 @@ public class Bootstrap implements ServiceSetup {
 
     this.componentClient = componentClient;
     this.mongoClient = MongoClients.create(KeyUtils.readMongoDbUri());
-
-    CoordinatedShutdown.get(materializer.system()).addTask(
-      CoordinatedShutdown.PhaseServiceUnbind(),
-      "close-client", ()-> {
-        logger.debug("Closing mongo client");
-        mongoClient.close();
-        return CompletableFuture.completedFuture(Done.getInstance());
-      }
-    );
-
   }
 
   @Override
