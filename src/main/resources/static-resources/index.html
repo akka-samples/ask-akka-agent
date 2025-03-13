@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat Demo</title>
+    <title>Ask Akka</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.21.2/babel.min.js"></script>
@@ -101,21 +101,34 @@
         .chat-container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            max-height: 100vh;
+            height: 100%;
+            max-height: 100%;
             overflow: hidden;
         }
         .message-area {
             flex: 1;
             overflow-y: auto;
             padding: 1rem;
+            padding-top: 1.5rem;
         }
         .header-area {
             flex-shrink: 0;
         }
         .input-area {
             flex-shrink: 0;
+            position: sticky;
+            bottom: 0;
+            background-color: white;
+            z-index: 10;
         }
+
+        .chat-message-wrapper {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding-bottom: 1rem;
+        }
+
     </style>
 </head>
 <body>
@@ -137,6 +150,7 @@
     }
     return data;
   };
+
 
   // Main App component
   function App() {
@@ -177,32 +191,35 @@
 
     return (
       <div className="h-screen">
-        <div className="container mx-auto h-full">
-          <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center py-4 px-4 flex-shrink-0">
-              <h1 className="text-3xl font-bold text-blue-600">AI Chat Interface Demo</h1>
-              {isLoggedIn && (
+        <div className="h-full flex flex-col">
+          <div className="flex justify-between items-center py-4 px-4 flex-shrink-0 bg-white shadow-sm">
+            <div className="flex items-center">
+              <h1 className="text-3xl font-bold text-blue-600">Ask Akka Demo</h1>
+              <span className="text-sm text-gray-500 ml-4">User ID: {userId}</span>
+            </div>
+            {isLoggedIn && (
+              <div className="flex items-center space-x-4">
                 <button
                   onClick={handleLogout}
                   className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
                 >
                   Logout
                 </button>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            <div className="flex-grow overflow-hidden">
-              {!isLoggedIn ? (
-                <LoginScreen
-                  userId={userId}
-                  setUserId={setUserId}
-                  handleLogin={handleLogin}
-                  error={error}
-                />
-              ) : (
-                <ChatInterface userId={userId} />
-              )}
-            </div>
+          <div className="flex-grow overflow-hidden">
+            {!isLoggedIn ? (
+              <LoginScreen
+                userId={userId}
+                setUserId={setUserId}
+                handleLogin={handleLogin}
+                error={error}
+              />
+            ) : (
+              <ChatInterface userId={userId} />
+            )}
           </div>
         </div>
       </div>
@@ -212,7 +229,7 @@
   // Login Screen component
   function LoginScreen({ userId, setUserId, handleLogin, error }) {
     return (
-      <div className="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+      <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">Welcome to AI Chat</h2>
         <p className="text-gray-600 mb-6">Please enter a unique ID to continue</p>
 
@@ -243,9 +260,8 @@
     );
   }
 
-  // Chat Interface component
+  // Chat Interface component with sidebar
   function ChatInterface({ userId }) {
-    const [view, setView] = useState("sessions");
     const [sessions, setSessions] = useState([]);
     const [currentSession, setCurrentSession] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -253,47 +269,47 @@
 
     // Load sessions from the backend API
     useEffect(() => {
-      const fetchSessions = async () => {
-        try {
-          setLoading(true);
-          const response = await fetch(`/api/ask/sessions/${userId}`);
-
-          if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}`);
-          }
-
-          const data = await response.json();
-
-          // Transform the API response to match the expected format
-          const transformedSessions = data.sessions.map(session => ({
-            id: session.sessionId,
-            title: `Conversation from ${formatDate(session.creationDate)}`,
-            timestamp: new Date(session.creationDate).toISOString(),
-            conversationHistory: session.messages.map(msg => ({
-              type: msg.origin,  // convert 'origin' to 'type'
-              message: msg.message
-            }))
-          }));
-
-          setSessions(transformedSessions || []);
-        } catch (err) {
-          console.error("Error fetching sessions:", err);
-          setError("Failed to load your previous conversations");
-          // Set empty array as fallback
-          setSessions([]);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      // Utility function to format timestamps
-      const formatDate = (timestamp) => {
-        const date = new Date(timestamp);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-      };
-
       fetchSessions();
     }, [userId]);
+
+    const fetchSessions = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`/api/ask/sessions/${userId}`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Transform the API response to match the expected format
+        const transformedSessions = data.sessions.map(session => ({
+          id: session.sessionId,
+          title: `Conversation from ${formatDate(session.creationDate)}`,
+          timestamp: new Date(session.creationDate).toISOString(),
+          conversationHistory: session.messages.map(msg => ({
+            type: msg.origin,  // convert 'origin' to 'type'
+            message: msg.message
+          }))
+        }));
+
+        setSessions(transformedSessions || []);
+      } catch (err) {
+        console.error("Error fetching sessions:", err);
+        setError("Failed to load your previous conversations");
+        // Set empty array as fallback
+        setSessions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Utility function to format timestamps
+    const formatDate = (timestamp) => {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    };
 
     // Create new session
     const createNewSession = () => {
@@ -306,13 +322,11 @@
 
       setSessions([newSession, ...sessions]);
       setCurrentSession(newSession);
-      setView("chat");
     };
 
     // Open existing session
     const openSession = (session) => {
       setCurrentSession(session);
-      setView("chat");
     };
 
     // Save session (local update after backend interaction)
@@ -325,94 +339,89 @@
       setCurrentSession(updatedSession);
     };
 
-    // Return to sessions list
-    const backToSessions = () => {
-      setView("sessions");
-      setCurrentSession(null);
-    };
-
     return (
-      <div className="bg-white rounded-lg shadow-md overflow-hidden h-full">
-        {view === "sessions" ? (
-          <SessionsScreen
-            sessions={sessions}
-            createNewSession={createNewSession}
-            openSession={openSession}
-            userId={userId}
-            loading={loading}
-            error={error}
-          />
-        ) : (
-          <ChatScreen
-            session={currentSession}
-            saveSession={saveSession}
-            backToSessions={backToSessions}
-            userId={userId}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Sessions Screen component
-  function SessionsScreen({ sessions, createNewSession, openSession, userId, loading, error }) {
-    return (
-      <div className="h-full flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center flex-shrink-0">
-          <div>
-            <h2 className="text-xl font-semibold">Your Conversations</h2>
-            <p className="text-sm text-gray-500">User ID: {userId}</p>
+      <div className="h-full flex">
+        {/* Sidebar - Sessions List */}
+        <div className="relative bg-white border-r overflow-y-auto w-80">
+          <div className="p-4 border-b">
+            <button
+              onClick={createNewSession}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              New Chat
+            </button>
           </div>
-          <button
-            onClick={createNewSession}
-            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            New Chat
-          </button>
-        </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="text-center p-8 text-gray-500">
-              <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Loading your conversations...
-            </div>
-          ) : error ? (
-            <div className="text-center p-8 text-red-500">
-              {error}
-              <p className="mt-2 text-gray-500">You can still start a new conversation.</p>
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="text-center p-8 text-gray-500">
-              No conversations yet. Start a new chat!
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-200">
-              {sessions.map((session) => (
-                <li
-                  key={session.id}
-                  className="p-4 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => openSession(session)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium">{session.title}</h3>
-                      <p className="text-sm text-gray-500 truncate-2">
-                        {session.conversationHistory && session.conversationHistory.length > 0
-                          ? session.conversationHistory[session.conversationHistory.length - 1].message.substring(0, 100) + (session.conversationHistory[session.conversationHistory.length - 1].message.length > 100 ? '...' : '')
-                          : "Empty conversation"}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-400">
+          <div className="overflow-y-auto">
+            {loading ? (
+              <div className="text-center p-8 text-gray-500">
+                <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading...
+              </div>
+            ) : error ? (
+              <div className="text-center p-8 text-red-500">
+                {error}
+                <p className="mt-2 text-gray-500">Try creating a new chat.</p>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center p-8 text-gray-500">
+                No conversations yet. Start a new chat!
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {sessions.map((session) => (
+                  <li
+                    key={session.id}
+                    className={`p-4 hover:bg-gray-50 cursor-pointer ${
+                      currentSession && currentSession.id === session.id
+                        ? 'bg-blue-50 border-l-4 border-blue-500'
+                        : ''
+                    }`}
+                    onClick={() => openSession(session)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 overflow-hidden">
+                        <h3 className="font-medium truncate">{session.title}</h3>
+                        <p className="text-sm text-gray-500 truncate-2">
+                          {session.conversationHistory && session.conversationHistory.length > 0
+                            ? session.conversationHistory[session.conversationHistory.length - 1].message.substring(0, 100) + (session.conversationHistory[session.conversationHistory.length - 1].message.length > 100 ? '...' : '')
+                            : "Empty conversation"}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
                         {new Date(session.timestamp).toLocaleDateString()}
                       </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        {/* Main Chat Area */}
+        <div className="flex-1 bg-white">
+          {currentSession ? (
+            <ChatScreen
+              session={currentSession}
+              saveSession={saveSession}
+              userId={userId}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center bg-gray-50">
+              <div className="text-center p-8">
+                <h3 className="text-xl font-medium text-gray-700 mb-2">Welcome to the Ask Akka Chat</h3>
+                <p className="text-gray-500 mb-4">Select a conversation from the sidebar or start a new chat</p>
+                <button
+                  onClick={createNewSession}
+                  className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  New Chat
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -420,7 +429,7 @@
   }
 
   // Chat Screen component
-  function ChatScreen({ session, saveSession, backToSessions, userId }) {
+  function ChatScreen({ session, saveSession, userId }) {
     const [messageInput, setMessageInput] = useState("");
     const [messages, setMessages] = useState([]);
     const [isTyping, setIsTyping] = useState(false);
@@ -434,6 +443,7 @@
     // Initialize messages from session
     useEffect(() => {
       setMessages(session.conversationHistory || []);
+      setTitle(session.title);
     }, [session]);
 
     // Scroll to bottom when messages change
@@ -574,6 +584,7 @@
         setError("Failed to get a response. Please try again.");
       }
     };
+
     // Handle title update
     const updateTitle = () => {
       if (title.trim() !== session.title) {
@@ -589,18 +600,6 @@
     return (
       <div className="chat-container">
         <div className="header-area p-4 border-b flex items-center">
-          <a
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              backToSessions();
-            }}
-            className="mr-3 text-gray-500 hover:text-gray-700 flex items-center"
-            aria-label="Back to conversations"
-          >
-            Back
-          </a>
-
           {isEditingTitle ? (
             <div className="flex-1 flex">
               <input
@@ -617,6 +616,7 @@
             <h2
               className="text-xl font-semibold flex-1 cursor-pointer hover:text-blue-600"
               onClick={() => setIsEditingTitle(true)}
+              title="Click to edit conversation title"
             >
               {title}
             </h2>
@@ -629,7 +629,7 @@
               Start a new conversation!
             </div>
           ) : (
-            <div>
+            <div className="chat-message-wrapper">
               {messages.map((msg, index) => (
                 <div
                   key={index}
