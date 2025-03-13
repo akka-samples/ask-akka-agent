@@ -61,23 +61,29 @@ public class AgentService {
         .build();
   }
 
-  private CompletionStage<Done> addUserMessage(String sessionId, String content, long tokensUsed) {
+  private CompletionStage<Done> addUserMessage(String userId,
+                                               String sessionId,
+                                               String content,
+                                               long tokensUsed) {
     return componentClient
-        .forEventSourcedEntity(sessionId)
+      .forEventSourcedEntity(sessionId)
         .method(SessionEntity::addUserMessage)
-      .invokeAsync(new SessionMessage(content, tokensUsed));
+      .invokeAsync(new SessionMessage(userId, sessionId, content, tokensUsed));
   }
 
-  private CompletionStage<Done> addAiMessage(String sessionId, String content, long tokensUsed) {
+  private CompletionStage<Done> addAiMessage(String userId,
+                                             String sessionId,
+                                             String content,
+                                             long tokensUsed) {
     return componentClient
-        .forEventSourcedEntity(sessionId)
+      .forEventSourcedEntity(sessionId)
         .method(SessionEntity::addAiMessage)
-      .invokeAsync(new SessionMessage(content, tokensUsed));
+      .invokeAsync(new SessionMessage(userId, sessionId, content, tokensUsed));
   }
 
-  private CompletionStage<List<ChatMessage>> fetchHistory(String sessionId) {
+  private CompletionStage<List<ChatMessage>> fetchHistory(String  entityId) {
     return componentClient
-        .forEventSourcedEntity(sessionId)
+        .forEventSourcedEntity( entityId)
         .method(SessionEntity::getHistory).invokeAsync()
         .thenApply(messages -> messages.messages().stream().map(this::toChatMessage).toList());
   }
@@ -138,13 +144,14 @@ public class AgentService {
       .build();
   }
 
-  public Source<StreamedResponse, NotUsed> ask(String sessionId, String userQuestion) {
+  public Source<StreamedResponse, NotUsed> ask(String userId, String sessionId, String userQuestion) {
 
+    var compositeSessionId = userId + ":" + sessionId;
     // TODO: make sure that user message is not persisted until LLM answer is added
     // maybe instead of sending question and answer apart, we should end it as one message to the entity.
     // either both are added to the history or none
     var historyFut =
-      addUserMessage(sessionId, userQuestion, 0)
+      addUserMessage(userId, compositeSessionId, userQuestion, 0)
         .thenCompose(__ -> fetchHistory(sessionId));
 
     var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, userQuestion, messages));
@@ -156,7 +163,7 @@ public class AgentService {
         .mapAsync(1, res -> {
           if (res.finished()) {// is the last message?
             logger.debug("finished message");
-            return addAiMessage(sessionId, res.content(), res.tokens())
+            return addAiMessage(userId, compositeSessionId, res.content(), res.tokens())
               // since the full content has already been streamed,
               // the last message can be transformed to an empty message
               .thenApply(__ -> StreamedResponse.empty());

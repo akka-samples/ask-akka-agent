@@ -31,7 +31,7 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
     USER
   }
 
-  public record SessionMessage(String content, long tokensUsed) {
+  public record SessionMessage(String userId, String sessionId, String content, long tokensUsed) {
   }
 
   public record Message(String content, MessageType type) {
@@ -62,11 +62,10 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   public record Messages(List<Message> messages) {
   }
 
-  // FIXME: it -looks- like we're not publishing an add user message for the
-  // user's initial query to the LLM. We want to make sure we're doing that.
   public Effect<Done> addUserMessage(SessionMessage sessionMessage) {
     return effects()
-        .persist(new SessionEvent.UserMessageAdded(sessionId, sessionMessage.content(), sessionMessage.tokensUsed(),
+        .persist(new SessionEvent.UserMessageAdded(sessionMessage.userId, sessionMessage.sessionId, sessionMessage.content(),
+          sessionMessage.tokensUsed(),
             Instant.now()))
         .thenReply(__ -> Done.getInstance());
   }
@@ -74,7 +73,8 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   public Effect<Done> addAiMessage(SessionMessage sessionMessage) {
     logger.debug("Received AI message {}", sessionMessage);
     return effects()
-        .persist(new SessionEvent.AiMessageAdded(sessionId, sessionMessage.content(), sessionMessage.tokensUsed(),
+        .persist(new SessionEvent.AiMessageAdded(sessionMessage.userId, sessionMessage.sessionId, sessionMessage.content(),
+          sessionMessage.tokensUsed(),
             Instant.now()))
         .thenReply(__ -> Done.getInstance());
   }

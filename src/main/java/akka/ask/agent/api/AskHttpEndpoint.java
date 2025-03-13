@@ -2,8 +2,6 @@ package akka.ask.agent.api;
 
 import akka.ask.agent.application.AgentService;
 import akka.ask.agent.application.ConversationHistoryView;
-import akka.ask.agent.application.SessionEntity;
-import akka.ask.agent.application.SessionEntity.Messages;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.HttpEndpoint;
@@ -17,7 +15,7 @@ import java.util.concurrent.CompletionStage;
 @HttpEndpoint("/api/ask")
 public class AskHttpEndpoint {
 
-  public record QueryRequest(String sessionId, String question) {
+  public record QueryRequest(String userId, String sessionId, String question) {
   }
 
   private final ComponentClient componentClient;
@@ -36,19 +34,19 @@ public class AskHttpEndpoint {
   @Post
   public CompletionStage<String> ask(QueryRequest request) {
     return agentService
-        .ask(request.sessionId, request.question)
+        .ask(request.userId, request.sessionId, request.question)
         // concatenate all response tokens
         .runFold(new StringBuffer(), (acc, elem) -> acc.append(elem.content()), materializer)
         .thenApply(StringBuffer::toString);
 
   }
 
-  @Get("/sessions/{sessionId}")
-  public CompletionStage<ConversationHistoryView.ChatMessages> getSession(String sessionId) {
+  @Get("/sessions/{userId}")
+  public CompletionStage<ConversationHistoryView.ConversationHistory> getSession(String userId) {
 
     return componentClient.forView()
         .method(ConversationHistoryView::getMessagesBySession)
-        .invokeAsync(sessionId);
+        .invokeAsync(userId);
   }
 
 }
