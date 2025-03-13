@@ -8,6 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.21.2/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.1/js.cookie.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
         body {
@@ -123,6 +124,10 @@
 <script type="text/babel">
   const { useState, useEffect, useRef } = React;
   const { marked } = window;
+  const { Cookies } = window;
+
+  // User session cookie name
+  const USER_COOKIE = "ai_chat_user_id";
 
   // Utility function to parse SSE response
   const parseSSE = (data) => {
@@ -139,6 +144,15 @@
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [error, setError] = useState("");
 
+    // Check for saved user cookie on component mount
+    useEffect(() => {
+      const savedUserId = Cookies.get(USER_COOKIE);
+      if (savedUserId) {
+        setUserId(savedUserId);
+        setIsLoggedIn(true);
+      }
+    }, []);
+
     // Handle login
     const handleLogin = () => {
       if (userId.trim().length < 3) {
@@ -146,15 +160,36 @@
         return;
       }
 
+      // Save user ID to cookie (expires in 7 days)
+      Cookies.set(USER_COOKIE, userId, { expires: 7 });
+
       setError("");
       setIsLoggedIn(true);
+    };
+
+    // Handle logout
+    const handleLogout = () => {
+      // Remove the user cookie
+      Cookies.remove(USER_COOKIE);
+      setUserId("");
+      setIsLoggedIn(false);
     };
 
     return (
       <div className="h-screen">
         <div className="container mx-auto h-full">
           <div className="h-full flex flex-col">
-            <h1 className="text-3xl font-bold py-4 text-center text-blue-600 flex-shrink-0">AI Chat Interface Demo</h1>
+            <div className="flex justify-between items-center py-4 px-4 flex-shrink-0">
+              <h1 className="text-3xl font-bold text-blue-600">AI Chat Interface Demo</h1>
+              {isLoggedIn && (
+                <button
+                  onClick={handleLogout}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                >
+                  Logout
+                </button>
+              )}
+            </div>
 
             <div className="flex-grow overflow-hidden">
               {!isLoggedIn ? (
