@@ -19,56 +19,56 @@ public class ConversationHistoryView extends View {
 
   private final static Logger logger = LoggerFactory.getLogger(ConversationHistoryView.class);
 
-  public record ConversationHistory(List<SessionMessages> sessionMessages) {
+  public record ConversationHistory(List<Session> sessions) {
 
   }
 
-  public record SessionMessage(String message, String origin, long timestamp) {
+  public record Message(String message, String origin, long timestamp) {
   }
 
-  public record SessionMessages(String userId, String sessionId, long creationDate, List<SessionMessage> messages) {
-    public SessionMessages add(SessionMessage message) {
+  public record Session(String userId, String sessionId, long creationDate, List<Message> messages) {
+    public Session add(Message message) {
       messages.add(message);
       return this;
     }
   }
 
-  @Query("SELECT collect(*) as sessionMessages FROM view_chat_log WHERE userId = :id ORDER by creationDate DESC")
+  @Query("SELECT collect(*) as sessions FROM view_chat_log WHERE userId = :id ORDER by creationDate DESC")
   public QueryEffect<ConversationHistory> getMessagesBySession(String id) {
     return queryResult();
   }
 
   @Consume.FromEventSourcedEntity(SessionEntity.class)
-  public static class ChatMessageUpdater extends TableUpdater<SessionMessages> {
+  public static class ChatMessageUpdater extends TableUpdater<Session> {
 
-    public Effect<SessionMessages> onEvent(SessionEvent event) {
+    public Effect<Session> onEvent(SessionEvent event) {
       return switch (event) {
         case SessionEvent.AiMessageAdded added -> aiMessage(added);
         case SessionEvent.UserMessageAdded added -> userMessage(added);
       };
     }
 
-    private Effect<SessionMessages> aiMessage(SessionEvent.AiMessageAdded added) {
-      SessionMessage newMessage = new SessionMessage(added.content(), "ai", added.timeStamp().toEpochMilli());
+    private Effect<Session> aiMessage(SessionEvent.AiMessageAdded added) {
+      Message newMessage = new Message(added.content(), "ai", added.timeStamp().toEpochMilli());
       return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
     }
 
-    private Effect<SessionMessages> userMessage(SessionEvent.UserMessageAdded added) {
-      SessionMessage newMessage = new SessionMessage(added.content(), "user",
+    private Effect<Session> userMessage(SessionEvent.UserMessageAdded added) {
+      Message newMessage = new Message(added.content(), "user",
         added.timeStamp().toEpochMilli());
       return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
     }
 
 
-    private SessionMessages rowStateOrNew(String userId) {
+    private Session rowStateOrNew(String userId) {
       return rowState() != null ? rowState() : newState(userId);
     }
 
-    private SessionMessages newState(String userId) {
+    private Session newState(String userId) {
       if (updateContext().eventSubject().isEmpty()) {
         throw new IllegalStateException("Event subject is empty");
       }
-      return new SessionMessages(
+      return new Session(
         userId,
         updateContext().eventSubject().get(),
         Instant.now().toEpochMilli(),

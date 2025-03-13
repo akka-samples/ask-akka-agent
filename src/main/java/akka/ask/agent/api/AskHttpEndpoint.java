@@ -2,11 +2,14 @@ package akka.ask.agent.api;
 
 import akka.ask.agent.application.AgentService;
 import akka.ask.agent.application.ConversationHistoryView;
+import akka.ask.agent.application.StreamedResponse;
+import akka.http.javadsl.model.HttpResponse;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
+import akka.javasdk.http.HttpResponses;
 import akka.stream.Materializer;
 
 import java.util.concurrent.CompletionStage;
@@ -32,12 +35,13 @@ public class AskHttpEndpoint {
    * This method runs the search and concatenates the streamed result.
    */
   @Post
-  public CompletionStage<String> ask(QueryRequest request) {
-    return agentService
+  public HttpResponse ask(QueryRequest request) {
+
+    var response = agentService
         .ask(request.userId, request.sessionId, request.question)
-        // concatenate all response tokens
-        .runFold(new StringBuffer(), (acc, elem) -> acc.append(elem.content()), materializer)
-        .thenApply(StringBuffer::toString);
+        .map(StreamedResponse::content);
+
+    return HttpResponses.serverSentEvents(response);
 
   }
 

@@ -20,11 +20,6 @@ import static akka.ask.agent.application.SessionEntity.MessageType.USER;
 public class SessionEntity extends EventSourcedEntity<SessionEntity.State, SessionEvent> {
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
-  private final String sessionId;
-
-  public SessionEntity(EventSourcedEntityContext context) {
-    this.sessionId = context.entityId();
-  }
 
   enum MessageType {
     AI,
@@ -71,7 +66,6 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   }
 
   public Effect<Done> addAiMessage(SessionMessage sessionMessage) {
-    logger.debug("Received AI message {}", sessionMessage);
     return effects()
         .persist(new SessionEvent.AiMessageAdded(sessionMessage.userId, sessionMessage.sessionId, sessionMessage.content(),
           sessionMessage.tokensUsed(),
@@ -92,7 +86,6 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
   @Override
   public State applyEvent(SessionEvent event) {
-    logger.debug("Session event: {}", event);
     return switch (event) {
       case SessionEvent.AiMessageAdded msg -> currentState().add(new Message(msg.content(), AI));
       case SessionEvent.UserMessageAdded msg -> currentState().add(new Message(msg.content(), USER));
