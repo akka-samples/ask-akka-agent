@@ -275,7 +275,7 @@
     const fetchSessions = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/ask/sessions/${userId}`);
+        const response = await fetch(`/api/${userId}/sessions`);
 
         if (!response.ok) {
           throw new Error(`HTTP error ${response.status}`);

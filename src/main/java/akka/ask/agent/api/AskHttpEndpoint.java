@@ -15,7 +15,7 @@ import akka.stream.Materializer;
 import java.util.concurrent.CompletionStage;
 
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
-@HttpEndpoint("/api/ask")
+@HttpEndpoint("/api")
 public class AskHttpEndpoint {
 
   public record QueryRequest(String userId, String sessionId, String question) {
@@ -34,7 +34,7 @@ public class AskHttpEndpoint {
   /**
    * This method runs the search and concatenates the streamed result.
    */
-  @Post
+  @Post("/ask")
   public HttpResponse ask(QueryRequest request) {
 
     var response = agentService
@@ -45,7 +45,7 @@ public class AskHttpEndpoint {
 
   }
 
-  @Get("/sessions/{userId}")
+  @Get("/{userId}/sessions/")
   public CompletionStage<ConversationHistoryView.ConversationHistory> getSession(String userId) {
 
     return componentClient.forView()

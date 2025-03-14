@@ -50,30 +50,26 @@ public class ConversationHistoryView extends View {
 
     private Effect<Session> aiMessage(SessionEvent.AiMessageAdded added) {
       Message newMessage = new Message(added.content(), "ai", added.timeStamp().toEpochMilli());
-      return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
+      var rowState = rowStateOrNew(added.userId(), added.sessionId());
+      return effects().updateRow(rowState.add(newMessage));
     }
 
     private Effect<Session> userMessage(SessionEvent.UserMessageAdded added) {
-      Message newMessage = new Message(added.content(), "user",
-        added.timeStamp().toEpochMilli());
-      return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
+      Message newMessage = new Message(added.content(), "user", added.timeStamp().toEpochMilli());
+      var rowState = rowStateOrNew(added.userId(), added.sessionId());
+      return effects().updateRow(rowState.add(newMessage));
     }
 
-
-    private Session rowStateOrNew(String userId) {
-      return rowState() != null ? rowState() : newState(userId);
+    private Session rowStateOrNew(String userId, String sessionId) {
+      if (rowState() != null) return rowState();
+      else
+        return new Session(
+          userId,
+          sessionId,
+          Instant.now().toEpochMilli(),
+          new ArrayList<>());
     }
 
-    private Session newState(String userId) {
-      if (updateContext().eventSubject().isEmpty()) {
-        throw new IllegalStateException("Event subject is empty");
-      }
-      return new Session(
-        userId,
-        updateContext().eventSubject().get(),
-        Instant.now().toEpochMilli(),
-        new ArrayList<>());
-    }
   }
 
 }
