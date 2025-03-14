@@ -16,33 +16,21 @@ import java.util.concurrent.CompletionStage;
 
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api")
-public class AskHttpEndpoint {
+public class UsersEndpoint {
 
-  public record QueryRequest(String userId, String sessionId, String question) {
-  }
 
   private final ComponentClient componentClient;
-  private final AgentService agentService;
-  private final Materializer materializer;
 
-  public AskHttpEndpoint(AgentService agentService, Materializer materializer, ComponentClient componentClient) {
-    this.agentService = agentService;
-    this.materializer = materializer;
+  public UsersEndpoint(ComponentClient componentClient) {
     this.componentClient = componentClient;
   }
 
-  /**
-   * This method runs the search and concatenates the streamed result.
-   */
-  @Post("/ask")
-  public HttpResponse ask(QueryRequest request) {
+  @Get("/users/{userId}/sessions/")
+  public CompletionStage<ConversationHistoryView.ConversationHistory> getSession(String userId) {
 
-    var response = agentService
-        .ask(request.userId, request.sessionId, request.question)
-        .map(StreamedResponse::content);
-
-    return HttpResponses.serverSentEvents(response);
+    return componentClient.forView()
+        .method(ConversationHistoryView::getMessagesBySession)
+        .invokeAsync(userId);
   }
-
 
 }
