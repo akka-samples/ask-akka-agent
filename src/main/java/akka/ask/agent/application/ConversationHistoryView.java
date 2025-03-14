@@ -10,6 +10,7 @@ import akka.javasdk.view.View;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,51 +19,60 @@ public class ConversationHistoryView extends View {
 
   private final static Logger logger = LoggerFactory.getLogger(ConversationHistoryView.class);
 
-  public record ChatMessage(String message, String origin, long timestamp) {
+  public record ConversationHistory(List<Session> sessions) {
+
   }
 
-  public record ChatMessages(String sessionId, List<ChatMessage> messages) {
-    public ChatMessages add(ChatMessage message) {
+  public record Message(String message, String origin, long timestamp) {
+  }
+
+  public record Session(String userId, String sessionId, long creationDate, List<Message> messages) {
+    public Session add(Message message) {
       messages.add(message);
       return this;
     }
   }
 
-  @Query("SELECT * FROM view_chat_log WHERE sessionId = :id")
-  public QueryEffect<ChatMessages> getMessagesBySession(String id) {
+  @Query("SELECT collect(*) as sessions FROM view_chat_log WHERE userId = :id ORDER by creationDate DESC")
+  public QueryEffect<ConversationHistory> getMessagesBySession(String id) {
     return queryResult();
   }
 
   @Consume.FromEventSourcedEntity(SessionEntity.class)
-  public static class ChatMessageUpdater extends TableUpdater<ChatMessages> {
+  public static class ChatMessageUpdater extends TableUpdater<Session> {
 
-    public Effect<ChatMessages> onEvent(SessionEvent event) {
+    public Effect<Session> onEvent(SessionEvent event) {
       return switch (event) {
         case SessionEvent.AiMessageAdded added -> aiMessage(added);
         case SessionEvent.UserMessageAdded added -> userMessage(added);
       };
     }
 
-    private Effect<ChatMessages> aiMessage(SessionEvent.AiMessageAdded added) {
-      ChatMessage newMessage = new ChatMessage(added.content(), "ai", added.timeStamp().toEpochMilli());
-      return effects().updateRow(rowStateOrNew().add(newMessage));
+    private Effect<Session> aiMessage(SessionEvent.AiMessageAdded added) {
+      Message newMessage = new Message(added.content(), "ai", added.timeStamp().toEpochMilli());
+      return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
     }
 
-    private Effect<ChatMessages> userMessage(SessionEvent.UserMessageAdded added) {
-      ChatMessage newMessage = new ChatMessage(added.content(), "user", added.timeStamp().toEpochMilli());
-      return effects().updateRow(rowStateOrNew().add(newMessage));
+    private Effect<Session> userMessage(SessionEvent.UserMessageAdded added) {
+      Message newMessage = new Message(added.content(), "user",
+        added.timeStamp().toEpochMilli());
+      return effects().updateRow(rowStateOrNew(added.userId()).add(newMessage));
     }
 
 
-    private ChatMessages rowStateOrNew() {
-      return rowState() != null ? rowState() : newState();
+    private Session rowStateOrNew(String userId) {
+      return rowState() != null ? rowState() : newState(userId);
     }
 
-    private ChatMessages newState() {
+    private Session newState(String userId) {
       if (updateContext().eventSubject().isEmpty()) {
         throw new IllegalStateException("Event subject is empty");
       }
-      return new ChatMessages(updateContext().eventSubject().get(), new ArrayList<>());
+      return new Session(
+        userId,
+        updateContext().eventSubject().get(),
+        Instant.now().toEpochMilli(),
+        new ArrayList<>());
     }
   }
 

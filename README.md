@@ -32,13 +32,14 @@ Results are streamed, but concatenated in the endpoint.
 
 ```shell
 curl localhost:9000/api/ask --header "Content-Type: application/json" -XPOST \
---data '{ "sessionId": "foo", "question":"How many components exist in Akka 3?"}'
+--data '{ "userId": "001", "sessionId": "foo", "question":"How many components exist in Akka 3?"}'
 ```
 
 This will run a query and save the conversational history in a SessionEntity identified by 'foo'.
 Results are streamed using a gRPC stream.
 
 ```shell
- grpcurl --plaintext -d  '{ "sessionId": "foo", "question": "How many components exist in Akka 3?" }' localhost:9000 akka.ask.agent.api.AskGrpcEndpoint/Ask
+ grpcurl --plaintext -d  '{ "userId": "001", "sessionId": "foo", "question": "How many components exist in Akka 3?" }
+ ' localhost:9000 akka.ask.agent.api.AskGrpcEndpoint/Ask
 
 ```

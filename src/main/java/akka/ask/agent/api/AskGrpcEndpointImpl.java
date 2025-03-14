@@ -22,7 +22,7 @@ public class AskGrpcEndpointImpl implements AskGrpcEndpoint {
   @Override
   public Source<QueryResponse, NotUsed> ask(QueryRequest in) {
     return agentService
-      .ask(in.getSessionId(), in.getQuestion())
+      .ask(in.getUserId(), in.getSessionId(), in.getQuestion())
       .map(s -> QueryResponse.newBuilder().setAnswer(s.content()).build());
   }
 

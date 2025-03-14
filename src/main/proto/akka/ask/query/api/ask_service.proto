@@ -6,8 +6,9 @@ option java_package = "akka.ask.agent.api";
 package akka.ask.agent.api;
 
 message QueryRequest {
-  string sessionId = 1;
-  string question = 2;
+  string userId = 1;
+  string sessionId = 2;
+  string question = 3;
 }
 
 message QueryResponse {
