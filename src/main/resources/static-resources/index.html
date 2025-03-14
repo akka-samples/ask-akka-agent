@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.21.2/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.1/js.cookie.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
         body {
@@ -138,6 +139,7 @@
   const { useState, useEffect, useRef } = React;
   const { marked } = window;
   const { Cookies } = window;
+  const { v4: uuidv4 } = window.uuid;
 
   // User session cookie name
   const USER_COOKIE = "ai_chat_user_id";
@@ -275,7 +277,7 @@
     const fetchSessions = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/ask/sessions/${userId}`);
+        const response = await fetch(`/api/users/${userId}/sessions`);
 
         if (!response.ok) {
           throw new Error(`HTTP error ${response.status}`);
@@ -314,7 +316,7 @@
     // Create new session
     const createNewSession = () => {
       const newSession = {
-        id: `session-${Date.now()}`,
+        id: uuidv4(),
         title: "New Conversation",
         timestamp: new Date().toISOString(),
         conversationHistory: []
