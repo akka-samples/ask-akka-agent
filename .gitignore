@@ -37,3 +37,7 @@ replay_pid*
 src/main/resources/.env.local
 target
 
+
+.qodo
+akka-sdk-context/
+openai-java-example/
