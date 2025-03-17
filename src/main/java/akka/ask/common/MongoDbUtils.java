@@ -10,6 +10,7 @@ public class MongoDbUtils {
   public static EmbeddingStore<TextSegment> embeddingStore(MongoClient mongoClient) {
     return MongoDbEmbeddingStore.builder()
       .fromClient(mongoClient)
+      // TODO: make db name, collection name and index name configurable
       .databaseName("akka-docs")
       .collectionName("embeddings")
       .indexName("default")

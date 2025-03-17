@@ -2,7 +2,6 @@ package akka.ask;
 
 import akka.ask.agent.application.AgentService;
 import akka.ask.common.KeyUtils;
-import akka.ask.indexer.application.RagIndexing;
 import akka.javasdk.DependencyProvider;
 import akka.javasdk.ServiceSetup;
 import akka.javasdk.annotations.Setup;
@@ -41,10 +40,6 @@ public class Bootstrap implements ServiceSetup {
     return new DependencyProvider() {
       @Override
       public <T> T getDependency(Class<T> cls) {
-        if (cls.equals(RagIndexing.class)) {
-          return (T) new RagIndexing(mongoClient);
-        }
-
         if (cls.equals(AgentService.class)) {
           return (T) new AgentService(componentClient, mongoClient);
         }
