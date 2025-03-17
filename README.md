@@ -27,19 +27,15 @@ curl -XPOST localhost:9000/api/index/start
 
 # Query the AI
 
-This will run a query and save the conversational history in a SessionEntity identified by 'foo'.
-Results are streamed, but concatenated in the endpoint.
+Use the Web UI to make calls.
+http://localhost:9000/
+
+Alternatively, call the API directly using curl.
 
 ```shell
 curl localhost:9000/api/ask --header "Content-Type: application/json" -XPOST \
---data '{ "userId": "001", "sessionId": "foo", "question":"How many components exist in Akka 3?"}'
+--data '{ "userId": "001", "sessionId": "foo", "question":"How many components exist in the Akka SDK?"}'
 ```
-
 This will run a query and save the conversational history in a SessionEntity identified by 'foo'.
-Results are streamed using a gRPC stream.
+Results are streamed using SSE.
 
-```shell
- grpcurl --plaintext -d  '{ "userId": "001", "sessionId": "foo", "question": "How many components exist in Akka 3?" }
- ' localhost:9000 akka.ask.agent.api.AskGrpcEndpoint/Ask
-
-```
