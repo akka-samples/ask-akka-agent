@@ -57,7 +57,7 @@ public class AgentService {
         .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
         .embeddingModel(OpenAiUtils.embeddingModel())
         .maxResults(10)
-        .minScore(0.8)
+        .minScore(0.1)
         .build();
   }
 
