@@ -2,7 +2,6 @@ package akka.ask.agent.application;
 
 import akka.Done;
 import akka.NotUsed;
-import akka.ask.agent.application.SessionEntity.SessionMessage;
 import akka.ask.common.MongoDbUtils;
 import akka.ask.common.OpenAiUtils;
 import akka.javasdk.client.ComponentClient;
@@ -61,26 +60,12 @@ public class AgentService {
         .build();
   }
 
-  private CompletionStage<Done> addUserMessage(String compositeEntityId,
-                                               String userId,
-                                               String sessionId,
-                                               String content,
-                                               long tokensUsed) {
+  private CompletionStage<Done> addExchange(String compositeEntityId,
+                                            SessionEntity.Exchange conversation) {
     return componentClient
       .forEventSourcedEntity(compositeEntityId)
-        .method(SessionEntity::addUserMessage)
-      .invokeAsync(new SessionMessage(userId, sessionId, content, tokensUsed));
-  }
-
-  private CompletionStage<Done> addAiMessage(String compositeEntityId,
-                                             String userId,
-                                             String sessionId,
-                                             String content,
-                                             long tokensUsed) {
-    return componentClient
-      .forEventSourcedEntity(compositeEntityId)
-        .method(SessionEntity::addAiMessage)
-      .invokeAsync(new SessionMessage(userId, sessionId, content, tokensUsed));
+      .method(SessionEntity::addExchange)
+      .invokeAsync(conversation);
   }
 
   private CompletionStage<List<ChatMessage>> fetchHistory(String  entityId) {
@@ -149,31 +134,33 @@ public class AgentService {
   public Source<StreamedResponse, NotUsed> ask(String userId, String sessionId, String userQuestion) {
 
     var compositeEntityId = userId + ":" + sessionId;
-    // TODO: make sure that user message is not persisted until LLM answer is added
-    // maybe instead of sending question and answer apart, we should end it as one message to the entity.
-    // either both are added to the history or none
-    var historyFut =
-      addUserMessage(compositeEntityId, userId, sessionId, userQuestion, 0)
-        .thenCompose(__ -> fetchHistory(sessionId));
-
-    var assistantFut = historyFut.thenApply(messages -> createAssistant(sessionId, userQuestion, messages));
+    var assistantFut =
+      fetchHistory(sessionId)
+        .thenApply(messages -> createAssistant(sessionId, userQuestion, messages));
 
     return Source
         .completionStage(assistantFut)
-        // once we have the assistant, we run the query that is itself streamed back
+        // once we have the assistant, we run the query and get the response streamed back
       .flatMapConcat(assistant -> AkkaStreamUtils.toAkkaSource(assistant.chat(userQuestion)))
         .mapAsync(1, res -> {
           if (res.finished()) {// is the last message?
-            logger.debug("finished message");
-            return addAiMessage(compositeEntityId, userId, sessionId, res.content(), res.tokens())
-              // since the full content has already been streamed,
+            logger.debug("Exchange finished. Total input tokens {}, total output tokens {}", res.inputTokens(), res.outputTokens());
+            var exchange = new SessionEntity.Exchange(
+              userId,
+              sessionId,
+              userQuestion, res.inputTokens(),
+              res.content(), res.outputTokens()
+            );
+
+            return addExchange(compositeEntityId, exchange)
+              // since the full response has already been streamed,
               // the last message can be transformed to an empty message
               .thenApply(__ -> StreamedResponse.empty());
           }
           else {
-            logger.debug("partial message {}", res);
+            logger.debug("partial message '{}'", res.content());
             // other messages are streamed out to the caller
-            // (those are the tokens emitted by the llm)
+            // (those are the responseTokensCount emitted by the llm)
             return CompletableFuture.completedFuture(res);
           }
         });

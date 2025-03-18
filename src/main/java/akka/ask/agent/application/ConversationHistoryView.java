@@ -49,13 +49,13 @@ public class ConversationHistoryView extends View {
     }
 
     private Effect<Session> aiMessage(SessionEvent.AiMessageAdded added) {
-      Message newMessage = new Message(added.content(), "ai", added.timeStamp().toEpochMilli());
+      Message newMessage = new Message(added.response(), "ai", added.timeStamp().toEpochMilli());
       var rowState = rowStateOrNew(added.userId(), added.sessionId());
       return effects().updateRow(rowState.add(newMessage));
     }
 
     private Effect<Session> userMessage(SessionEvent.UserMessageAdded added) {
-      Message newMessage = new Message(added.content(), "user", added.timeStamp().toEpochMilli());
+      Message newMessage = new Message(added.query(), "user", added.timeStamp().toEpochMilli());
       var rowState = rowStateOrNew(added.userId(), added.sessionId());
       return effects().updateRow(rowState.add(newMessage));
     }
