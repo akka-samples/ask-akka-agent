@@ -10,19 +10,26 @@ public class AkkaStreamUtils {
   /**
    * Converts a TokenStream to an Akka Source.
    * <p>
-   * This method will build an Akka Source that is fed with the tokens produced by TokenStream.
+   * This method will build an Akka Source that is fed with the responseTokensCount produced by TokenStream.
    */
   public static Source<StreamedResponse, NotUsed> toAkkaSource(TokenStream tokenStream) {
     return
       Source
         .<StreamedResponse>queue(10000)
         .mapMaterializedValue(queue -> {
-          // tokens emitted by tokenStream are passed to the queue
+          // responseTokensCount emitted by tokenStream are passed to the queue
           // that ultimately feeds the Akka Source
           tokenStream
+            // the partial responses are the tokens that are streamed out as the response
             .onPartialResponse(msg -> queue.offer(StreamedResponse.partial(msg)))
+            // on completion, we receive a ChatResponse that contains the full response text + token usage
+            // we emit this last message so we can easily add it to the SessionEntity and store the exchange
             .onCompleteResponse(res -> {
-              queue.offer(StreamedResponse.lastMessage(res.aiMessage().text(), res.tokenUsage().totalTokenCount()));
+              queue.offer(
+                StreamedResponse.lastMessage(
+                  res.aiMessage().text(),
+                  res.tokenUsage().inputTokenCount(),
+                  res.tokenUsage().outputTokenCount()));
               queue.complete();
             })
             .onError(queue::fail)

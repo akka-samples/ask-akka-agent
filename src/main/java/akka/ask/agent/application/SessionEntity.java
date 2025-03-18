@@ -4,8 +4,6 @@ import akka.Done;
 import akka.ask.agent.domain.SessionEvent;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.eventsourcedentity.EventSourcedEntity;
-import akka.javasdk.eventsourcedentity.EventSourcedEntityContext;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,55 +19,62 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
+
+  public record Exchange(String userId,
+                         String sessionId,
+                         String userQuestion,
+                         int queryTokensCount,
+                         String assistantResponse,
+                         int responseTokensCount){}
+
+
   enum MessageType {
     AI,
     USER
   }
-
-  public record SessionMessage(String userId, String sessionId, String content, long tokensUsed) {
-  }
-
   public record Message(String content, MessageType type) {
-
-    @JsonIgnore
-    public boolean isUser() {
-      return type == USER;
-    }
-
-    @JsonIgnore
-    public boolean isAi() {
-      return type == AI;
-    }
   }
 
-  public record State(List<Message> messages) {
+  public record State(List<Message> messages, int totalTokenUsage) {
     public static State empty() {
-      return new State(
-          new ArrayList<>());
+      return new State(new ArrayList<>(), 0);
     }
 
     public State add(Message content) {
       messages.add(content);
-      return new State(messages);
+      return new State(messages, totalTokenUsage);
+    }
+
+    public State addTokenUsage(int usage) {
+      return new State(messages, totalTokenUsage + usage);
     }
   }
 
   public record Messages(List<Message> messages) {
   }
 
-  public Effect<Done> addUserMessage(SessionMessage sessionMessage) {
-    return effects()
-        .persist(new SessionEvent.UserMessageAdded(sessionMessage.userId, sessionMessage.sessionId, sessionMessage.content(),
-          sessionMessage.tokensUsed(),
-            Instant.now()))
-        .thenReply(__ -> Done.getInstance());
-  }
+  public Effect<Done> addExchange(Exchange exchange) {
 
-  public Effect<Done> addAiMessage(SessionMessage sessionMessage) {
+    var now = Instant.now();
+
+    var userEvt =
+      new SessionEvent.UserMessageAdded(
+        exchange.userId,
+        exchange.sessionId,
+        exchange.userQuestion,
+        exchange.queryTokensCount,
+        now);
+
+    var assistantEvt =
+    new SessionEvent.AiMessageAdded(
+      exchange.userId,
+      exchange.sessionId,
+      exchange.assistantResponse,
+      exchange.responseTokensCount,
+      now);
+
     return effects()
-        .persist(new SessionEvent.AiMessageAdded(sessionMessage.userId, sessionMessage.sessionId, sessionMessage.content(),
-          sessionMessage.tokensUsed(),
-            Instant.now()))
+        .persist(userEvt, assistantEvt)
         .thenReply(__ -> Done.getInstance());
   }
 
@@ -87,8 +92,15 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
   @Override
   public State applyEvent(SessionEvent event) {
     return switch (event) {
-      case SessionEvent.AiMessageAdded msg -> currentState().add(new Message(msg.content(), AI));
-      case SessionEvent.UserMessageAdded msg -> currentState().add(new Message(msg.content(), USER));
+      case SessionEvent.UserMessageAdded msg ->
+        currentState()
+          .add(new Message(msg.query(), USER))
+          .addTokenUsage(msg.tokensUsed());
+
+      case SessionEvent.AiMessageAdded msg ->
+        currentState()
+          .add(new Message(msg.response(), AI))
+          .addTokenUsage(msg.tokensUsed());
     };
   }
 
