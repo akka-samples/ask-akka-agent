@@ -3,8 +3,23 @@ A proof of concept illustrating how to build an Agentic RAG workflow with Akka.
 
 # OpenAi and MongoDb Atlas
 
-This sample requires OpenAI API Key and a MongoDb Atlas URI. The key and uri needs to be passed in env variables: 
-`OPENAI_API_KEY` and `MONGODB_ATLAS_URI` respectively. 
+This sample requires OpenAI API Key and a MongoDb Atlas URI. 
+
+## Mongo Atlas
+The Mongo DB atlas URI you get from signing up/logging in to https://cloud.mongodb.com
+Create an empty database and add a database user with a password. Make sure to allow access from your local IP address
+to be able to run the sample locally.
+
+The Mongo DB console should now help out by giving you a URI/connection
+string to copy. Note that you need to insert the database user password into the generated URI.
+
+## Open API
+To get the Open API key, sign up/log in to find the key at https://platform.openai.com/api-keys
+
+## Pass keys to the service
+
+The key and uri needs to be passed in env variables:
+`OPENAI_API_KEY` and `MONGODB_ATLAS_URI` respectively.
 
 Alternatively, you can add the key and uri in a file located at `src/main/resources/.env.local`. 
 
