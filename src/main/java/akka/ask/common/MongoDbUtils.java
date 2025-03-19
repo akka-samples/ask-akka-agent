@@ -3,6 +3,7 @@ package akka.ask.common;
 import com.mongodb.client.MongoClient;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.mongodb.IndexMapping;
 import dev.langchain4j.store.embedding.mongodb.MongoDbEmbeddingStore;
 
 public class MongoDbUtils {
@@ -15,6 +16,8 @@ public class MongoDbUtils {
       .collectionName("embeddings")
       .indexName("default")
       .createIndex(true)
+        // must be aligned with Voyage output dimension
+        .indexMapping(IndexMapping.builder().dimension(Models.embeddingModel().dimension()).build())
       .build();
   }
 }

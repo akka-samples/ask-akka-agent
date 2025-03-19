@@ -2,8 +2,9 @@ package akka.ask.agent.application;
 
 import akka.Done;
 import akka.NotUsed;
+import akka.ask.common.KeyUtils;
+import akka.ask.common.Models;
 import akka.ask.common.MongoDbUtils;
-import akka.ask.common.OpenAiUtils;
 import akka.javasdk.client.ComponentClient;
 import akka.stream.javadsl.Source;
 import com.mongodb.client.MongoClient;
@@ -11,6 +12,10 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.anthropic.AnthropicChatModelName;
+import dev.langchain4j.model.anthropic.AnthropicStreamingChatModel;
+import dev.langchain4j.model.voyageai.VoyageAiEmbeddingModel;
+import dev.langchain4j.model.voyageai.VoyageAiEmbeddingModelName;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
@@ -20,6 +25,7 @@ import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -54,7 +60,7 @@ public class AgentService {
 
     this.contentRetriever = EmbeddingStoreContentRetriever.builder()
         .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
-        .embeddingModel(OpenAiUtils.embeddingModel())
+        .embeddingModel(Models.embeddingModel())
         .maxResults(10)
         .minScore(0.1)
         .build();
@@ -116,7 +122,7 @@ public class AgentService {
 
   private Assistant createAssistant(String sessionId, String userQuestion, List<ChatMessage> messages) {
 
-    var chatLanguageModel = OpenAiUtils.streamingChatModel();
+    var chatLanguageModel = Models.streamingChatModel();
 
     RetrievalAugmentor retrievalAugmentor =
       DefaultRetrievalAugmentor.builder()

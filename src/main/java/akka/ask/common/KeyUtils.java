@@ -12,14 +12,15 @@ public class KeyUtils {
     return readKey("MONGODB_ATLAS_URI");
   }
 
-  public static String readOpenAiKey() {
-    return readKey("OPENAI_API_KEY");
+  public static String readAnthropicApiKey() {
+    return readKey("ANTHROPIC_API_KEY");
   }
 
+  public static String readVoyageApiKey() { return readKey("VOYAGE_API_KEY"); }
 
   public static boolean hasValidKeys() {
     try {
-      return !readMongoDbUri().isEmpty() && !readOpenAiKey().isEmpty();
+      return !readMongoDbUri().isEmpty() && !readAnthropicApiKey().isEmpty();
     } catch (Exception e) {
       return false;
     }
