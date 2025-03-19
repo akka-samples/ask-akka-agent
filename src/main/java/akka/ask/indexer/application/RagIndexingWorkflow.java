@@ -1,7 +1,8 @@
 package akka.ask.indexer.application;
 
 import akka.Done;
-import akka.ask.common.OpenAiUtils;
+import akka.ask.common.Models;
+import akka.ask.common.MongoDbUtils;
 import akka.javasdk.annotations.ComponentId;
 import akka.javasdk.workflow.Workflow;
 import com.mongodb.client.MongoClient;
@@ -13,8 +14,8 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.document.splitter.DocumentByCharacterSplitter;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.store.embedding.mongodb.MongoDbEmbeddingStore;
+import dev.langchain4j.model.voyageai.VoyageAiEmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,9 +24,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
@@ -33,17 +32,18 @@ import java.util.stream.Stream;
 @ComponentId("rag-indexing-workflow")
 public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
-
-  private final Logger logger = LoggerFactory.getLogger(getClass());
-  private final OpenAiEmbeddingModel embeddingModel;
-  private final MongoDbEmbeddingStore embeddingStore;
+  private static final Logger logger = LoggerFactory.getLogger(RagIndexingWorkflow.class);
+  private final VoyageAiEmbeddingModel embeddingModel;
+  private final EmbeddingStore<TextSegment> embeddingStore;
   private final DocumentSplitter splitter;
   // metadata key used to store file name
   private final String srcKey = "src";
   private static final String PROCESSING_FILE_STEP = "processing-file";
 
 
-  private final CompletionStage<Done> futDone = CompletableFuture.completedFuture(Done.getInstance());
+  private static final CompletionStage<Done> futDone = CompletableFuture.completedFuture(Done.getInstance());
+
+  private final Timer timer = new Timer();
 
   public record State(List<Path> toProcess, List<Path> processed) {
 
@@ -87,17 +87,10 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
   public RagIndexingWorkflow(MongoClient mongoClient) {
 
-    this.embeddingModel = OpenAiUtils.embeddingModel();
-    this.embeddingStore =
-      MongoDbEmbeddingStore.builder()
-        .fromClient(mongoClient)
-        .databaseName("akka-docs")
-        .collectionName("embeddings")
-        .indexName("default")
-        .createIndex(true)
-        .build();
+    this.embeddingModel = Models.embeddingModel();
+    this.embeddingStore = MongoDbUtils.embeddingStore(mongoClient);
 
-    this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer());
+    this.splitter = new DocumentByCharacterSplitter(500, 50);
   }
 
   public Effect<Done> start() {
@@ -176,14 +169,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         var segments = splitter.split(docWithMetadata);
         logger.debug("Created {} segments for document {}", segments.size(), path.getFileName());
 
-        return segments
-          .stream()
-          .reduce(
-            futDone,
-            (acc, seg) -> addSegment(seg),
-            (stage1, stage2) -> futDone
-          );
-
+        return addSegments(segments);
       } catch (BlankDocumentException e) {
         // some documents are blank, we need to skip them
         return futDone;
@@ -194,19 +180,46 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
     }
   }
 
-  private CompletionStage<Done> addSegment(TextSegment seg) {
-    var fileName = seg.metadata().getString(srcKey);
-    return
-      CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
-        .thenCompose(res ->
-          CompletableFuture.supplyAsync(() -> {
-            logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
-              fileName,
-              res.tokenUsage().inputTokenCount(),
-              res.tokenUsage().outputTokenCount());
+  private CompletionStage<Done> addSegments(List<TextSegment> segments) {
+    if (segments.isEmpty()) return futDone;
+    else {
+      var seg = segments.getFirst();
+      var rest = segments.subList(1, segments.size());
+      var fileName = seg.metadata().getString(srcKey);
+      return
+          CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
+              .thenCompose(res ->
+                  CompletableFuture.supplyAsync(() -> {
+                    logger.debug("Segment embedded. Source file '{}'. Dimension {}, Tokens usage: in {}, out {}",
+                        fileName,
+                        res.content().dimension(),
+                        res.tokenUsage().inputTokenCount(),
+                        res.tokenUsage().outputTokenCount());
 
-            return embeddingStore.add(res.content(), seg);
-          }))
-        .thenApply(__ -> Done.getInstance());
+                    return embeddingStore.add(res.content(), seg);
+                  }))
+              .thenCompose(__ -> {
+                var delay = new CompletableFuture<Done>();
+                logger.info("Delaying next indexing step to not hit Voyage rate limit");
+                // Voyage claims free account allows at most 3RPM or 10K TPM, but it seems it blocks processing
+                // way earlier than that, I have not been able to make it work however slow I make the processing
+                timer.schedule(new TimerTask() {
+
+              @Override
+              public void run() {
+                var restCompleted = addSegments(rest);
+                restCompleted.whenComplete((done, error) -> {
+                  if (error != null) {
+                    delay.completeExceptionally(error);
+                  } else {
+                    delay.complete(done);
+                  }
+                });
+              }
+            }, 60000L);
+
+            return delay;
+          });
+    }
   }
 }
