@@ -17,6 +17,7 @@ import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
+import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,50 +83,27 @@ public class AgentService {
     };
   }
 
-  private MessageWindowChatMemory createChatMemory(String sessionId, List<ChatMessage> messages) {
-
-    // this storage it not really a store, but an interface to the SessionEntity
-    // initial state is set at creation (async call to entity)
-    var chatMemoryStore = new ChatMemoryStore() {
-
-      // it's initially set to message history coming from the entity
-      // this is temp cache that survives only a single request
-      private List<ChatMessage> localCache = messages;
-      public List<ChatMessage> getMessages(Object memoryId) {
-        return localCache;
-      }
-
-      @Override
-      public void updateMessages(Object memoryId, List<ChatMessage> messages) {
-        logger.info("Updating messages for session '{}', total size {}", sessionId, messages.size());
-        // update local cache for next iterations
-        localCache = messages;
-      }
-
-      @Override
-      public void deleteMessages(Object memoryId) {
-        // nothing to do here for the moment
-      }
-    };
-
-    return MessageWindowChatMemory.builder()
-        .maxMessages(2000)
-        .chatMemoryStore(chatMemoryStore)
-        .build();
-  }
-
-  private Assistant createAssistant(String sessionId, String userQuestion, List<ChatMessage> messages) {
+  private Assistant createAssistant(String sessionId,  List<ChatMessage> messages) {
 
     var chatLanguageModel = OpenAiUtils.streamingChatModel();
+
+    var chatMemoryStore = new InMemoryChatMemoryStore();
+    chatMemoryStore.updateMessages(sessionId, messages);
+
+    var chatMemory  = MessageWindowChatMemory.builder()
+      .maxMessages(2000)
+      .chatMemoryStore(chatMemoryStore)
+      .build();
 
     RetrievalAugmentor retrievalAugmentor =
       DefaultRetrievalAugmentor.builder()
         .contentRetriever(contentRetriever)
         .build();
 
+
     return AiServices.builder(Assistant.class)
       .streamingChatLanguageModel(chatLanguageModel)
-      .chatMemory(createChatMemory(sessionId, messages))
+      .chatMemory(chatMemory)
       .retrievalAugmentor(retrievalAugmentor)
       .systemMessageProvider(__ -> sysMessage)
       .build();
@@ -136,7 +114,7 @@ public class AgentService {
     var compositeEntityId = userId + ":" + sessionId;
     var assistantFut =
       fetchHistory(sessionId)
-        .thenApply(messages -> createAssistant(sessionId, userQuestion, messages));
+        .thenApply(messages -> createAssistant(sessionId, messages));
 
     return Source
         .completionStage(assistantFut)
