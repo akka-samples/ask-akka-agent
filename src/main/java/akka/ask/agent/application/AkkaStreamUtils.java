@@ -10,7 +10,10 @@ public class AkkaStreamUtils {
   /**
    * Converts a TokenStream to an Akka Source.
    * <p>
-   * This method will build an Akka Source that is fed with the responseTokensCount produced by TokenStream.
+   * This method will build an Akka Source that is fed with the response produced by TokenStream.
+   *
+   * The Akka Source is based on a queue. The tokens emitted by TokenStream are passed to the queue and therefore
+   * emitted by the Akka Source. The queue is completed when the TokenStream is exhausted.
    */
   public static Source<StreamedResponse, NotUsed> toAkkaSource(TokenStream tokenStream) {
     return

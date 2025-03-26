@@ -30,6 +30,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
 
+/**
+ * This workflow reads the files under src/main/resources/flat-doc/ and create the vector embeddings that are later
+ * used to augment the LLM context.
+ */
 @ComponentId("rag-indexing-workflow")
 public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
