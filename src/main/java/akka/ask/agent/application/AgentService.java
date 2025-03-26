@@ -16,7 +16,6 @@ import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
-import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,16 +25,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
- * This services works an interface to the AI.
- * It returns the AI response as a stream and can be used to stream out a
- * response
- * in a GrpcEndpoint or as SSE in an HttpEndpoint.
+ * This services works as an interface to the AI.
+ * It returns the AI response as a stream and can be used to stream out a response using for example SSE in an
+ * HttpEndpoint.
+ *
+ * The service is configured as a RAG agent that uses the OpenAI API to generate responses based on the Akka SDK documentation.
+ * It uses a MongoDB Atlas index to retrieve relevant documentation sections for the user's question.
+ *
+ * Moreover, the whole RAG setup is done through LangChain4j APIs.
+ *
+ * The chat memory is preserved on a SessionEntity. At start of each new exchange, the existing chat memory is
+ * retrieved and include into the chat context. Once the exchange finished, the latest pair of messages (user message
+ * and AI message) are saved to the SessionEntity.
+ *
  */
 public class AgentService {
 
   private final static Logger logger = LoggerFactory.getLogger(AgentService.class);
   private final ComponentClient componentClient;
-  private final EmbeddingStoreContentRetriever contentRetriever;
+  private final MongoClient mongoClient;
 
   private final String sysMessage = """
     You are a very enthusiastic Akka representative who loves to help people!
@@ -44,31 +52,28 @@ public class AgentService {
     Sorry, I don't know how to help with that.
     """;
 
+  // this langchain4j Assistant emits the response as a stream
+  // check AkkaStreamUtils.toAkkaSource to see how this stream is converted to an Akka Source
   interface Assistant {
     TokenStream chat(String message);
   }
 
-
-
   public AgentService(ComponentClient componentClient, MongoClient mongoClient) {
     this.componentClient = componentClient;
+    this.mongoClient = mongoClient;
 
-    this.contentRetriever = EmbeddingStoreContentRetriever.builder()
-        .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
-        .embeddingModel(OpenAiUtils.embeddingModel())
-        .maxResults(10)
-        .minScore(0.1)
-        .build();
   }
 
-  private CompletionStage<Done> addExchange(String compositeEntityId,
-                                            SessionEntity.Exchange conversation) {
+  private CompletionStage<Done> addExchange(String compositeEntityId, SessionEntity.Exchange conversation) {
     return componentClient
       .forEventSourcedEntity(compositeEntityId)
       .method(SessionEntity::addExchange)
       .invokeAsync(conversation);
   }
 
+  /**
+   * Fetches the history of the conversation for a given sessionId.
+   */
   private CompletionStage<List<ChatMessage>> fetchHistory(String  entityId) {
     return componentClient
         .forEventSourcedEntity( entityId)
@@ -83,23 +88,33 @@ public class AgentService {
     };
   }
 
+  /**
+   * This method build the RAG setup using LangChain4j APIs.
+   */
   private Assistant createAssistant(String sessionId,  List<ChatMessage> messages) {
 
     var chatLanguageModel = OpenAiUtils.streamingChatModel();
 
+    var contentRetriever = EmbeddingStoreContentRetriever.builder()
+      .embeddingStore(MongoDbUtils.embeddingStore(mongoClient))
+      .embeddingModel(OpenAiUtils.embeddingModel())
+      .maxResults(10)
+      .minScore(0.1)
+      .build();
+
+    var retrievalAugmentor =
+      DefaultRetrievalAugmentor.builder()
+        .contentRetriever(contentRetriever)
+        .build();
+
     var chatMemoryStore = new InMemoryChatMemoryStore();
     chatMemoryStore.updateMessages(sessionId, messages);
+
 
     var chatMemory  = MessageWindowChatMemory.builder()
       .maxMessages(2000)
       .chatMemoryStore(chatMemoryStore)
       .build();
-
-    RetrievalAugmentor retrievalAugmentor =
-      DefaultRetrievalAugmentor.builder()
-        .contentRetriever(contentRetriever)
-        .build();
-
 
     return AiServices.builder(Assistant.class)
       .streamingChatLanguageModel(chatLanguageModel)
@@ -109,20 +124,35 @@ public class AgentService {
       .build();
   }
 
+  /**
+   * The 'ask' method takes the user question run it through the RAG agent and returns the response as a stream.
+   */
   public Source<StreamedResponse, NotUsed> ask(String userId, String sessionId, String userQuestion) {
 
+    // we want the SessionEntity id to be unique for each user session,
+    // therefore we use a composite key of userId and sessionId
     var compositeEntityId = userId + ":" + sessionId;
+
+    // we fetch the history (if any) and create the assistant
+    // note that both calls are async, once we have the history,
+    // we can build the assistant using the previous chat memory
     var assistantFut =
       fetchHistory(sessionId)
         .thenApply(messages -> createAssistant(sessionId, messages));
 
+    // below we take the assistant future and build a Source to stream out the response
     return Source
         .completionStage(assistantFut)
         // once we have the assistant, we run the query and get the response streamed back
       .flatMapConcat(assistant -> AkkaStreamUtils.toAkkaSource(assistant.chat(userQuestion)))
         .mapAsync(1, res -> {
+
           if (res.finished()) {// is the last message?
             logger.debug("Exchange finished. Total input tokens {}, total output tokens {}", res.inputTokens(), res.outputTokens());
+
+            // when we have a finished response, we are ready to save the exchange to the SessionEntity
+            // note that the exchange is saved atomically in a single command
+            // since the pair question/answer belong together
             var exchange = new SessionEntity.Exchange(
               userId,
               sessionId,
@@ -130,9 +160,9 @@ public class AgentService {
               res.content(), res.outputTokens()
             );
 
+            // since the full response has already been streamed,
+            // the last message can be transformed to an empty message
             return addExchange(compositeEntityId, exchange)
-              // since the full response has already been streamed,
-              // the last message can be transformed to an empty message
               .thenApply(__ -> StreamedResponse.empty());
           }
           else {

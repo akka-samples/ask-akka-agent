@@ -13,8 +13,8 @@ to be able to run the sample locally.
 The Mongo DB console should now help out by giving you a URI/connection
 string to copy. Note that you need to insert the database user password into the generated URI.
 
-## Open API
-To get the Open API key, sign up/log in to find the key at https://platform.openai.com/api-keys
+## OpenAI API
+To get the OpenAI API key, sign up/log in to find the key at https://platform.openai.com/api-keys
 
 ## Pass keys to the service
 
@@ -39,6 +39,8 @@ To create the vectorized index, call:
 ```shell
 curl -XPOST localhost:9000/api/index/start 
 ```
+This call will take an extract of the Akka SDK documentation and create a vectorized index in MongoDB.
+The documentation files are located in `src/main/resources/flat-doc/`. That said, you can also add your own documentation files to this directory.
 
 # Query the AI
 
@@ -51,6 +53,7 @@ Alternatively, call the API directly using curl.
 curl localhost:9000/api/ask --header "Content-Type: application/json" -XPOST \
 --data '{ "userId": "001", "sessionId": "foo", "question":"How many components exist in the Akka SDK?"}'
 ```
-This will run a query and save the conversational history in a SessionEntity identified by 'foo'.
+
+This will run a query and save the conversational history in a `SessionEntity` identified by 'foo'.
 Results are streamed using SSE.
 

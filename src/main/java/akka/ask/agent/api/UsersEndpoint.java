@@ -14,6 +14,9 @@ import akka.stream.Materializer;
 
 import java.util.concurrent.CompletionStage;
 
+/**
+ * Endpoint to fetch user's sessions using the ConversationHistoryView.
+ */
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api")
 public class UsersEndpoint {

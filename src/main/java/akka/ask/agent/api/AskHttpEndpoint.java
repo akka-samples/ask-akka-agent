@@ -28,7 +28,7 @@ public class AskHttpEndpoint {
   }
 
   /**
-   * This method runs the search and concatenates the streamed result.
+   * This method runs the search and streams the response to the UI.
    */
   @Post("/ask")
   public HttpResponse ask(QueryRequest request) {
