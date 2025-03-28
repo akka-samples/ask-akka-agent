@@ -38,13 +38,13 @@ public class Bootstrap implements ServiceSetup {
   public DependencyProvider createDependencyProvider() {
     return new DependencyProvider() {
       @Override
-      public <T> Object getDependency(Class<T> cls) {
+      public <T> T getDependency(Class<T> cls) {
         if (cls.equals(AgentService.class)) {
-          return new AgentService(componentClient, mongoClient);
+          return (T) new AgentService(componentClient, mongoClient);
         }
 
         if (cls.equals(MongoClient.class)) {
-          return mongoClient;
+          return (T) mongoClient;
         }
         return null;
       }
