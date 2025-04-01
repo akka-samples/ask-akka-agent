@@ -168,7 +168,7 @@ For a complete reference for the Akka route descriptor, see the [Akka route desc
 CORS can be enabled by configuring at least one allowed origin, for example:
 
 ```bash
-akka route update acme-ecommerce --cors-parentId https://www.acme.org --cors-method GET --cors-method POST
+akka route update acme-ecommerce --cors-origin https://www.acme.org --cors-method GET --cors-method POST
 ```
 
 #### Securing routes
