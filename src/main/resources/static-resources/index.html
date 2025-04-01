@@ -409,7 +409,7 @@
           title: `Conversation from ${formatDate(session.creationDate)}`,
           timestamp: new Date(session.creationDate).toISOString(),
           conversationHistory: session.messages.map(msg => ({
-            type: msg.origin,  // convert 'origin' to 'type'
+            type: msg.origin,  // convert 'parentId' to 'type'
             message: msg.message
           }))
         }));

@@ -18,23 +18,39 @@ public class IndexerEndpoint {
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private final ComponentClient componentClient;
+  private final String workflowId = "rag-indexing";
 
   public IndexerEndpoint(ComponentClient componentClient) {
-
     this.componentClient = componentClient;
   }
 
   @Post("/start")
   public CompletionStage<HttpResponse> startIndexation() {
-    return componentClient.forWorkflow("indexing")
+    return componentClient.forWorkflow(workflowId)
       .method(RagIndexingWorkflow::start)
       .invokeAsync()
       .thenApply(__ -> HttpResponses.accepted());
   }
 
+  @Post("/pause")
+  public CompletionStage<HttpResponse> pause() {
+    return componentClient.forWorkflow(workflowId)
+      .method(RagIndexingWorkflow::pause)
+      .invokeAsync()
+      .thenApply(__ -> HttpResponses.accepted());
+  }
+
+  @Post("/resume")
+  public CompletionStage<HttpResponse> resume() {
+    return componentClient.forWorkflow(workflowId)
+      .method(RagIndexingWorkflow::resume)
+      .invokeAsync()
+      .thenApply(__ -> HttpResponses.accepted());
+  }
+
   @Post("/abort")
-  public CompletionStage<HttpResponse> abortIndexation() {
-    return componentClient.forWorkflow("indexing")
+  public CompletionStage<HttpResponse> abort() {
+    return componentClient.forWorkflow(workflowId)
       .method(RagIndexingWorkflow::abort)
       .invokeAsync()
       .thenApply(__ -> HttpResponses.accepted());

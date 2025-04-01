@@ -1,33 +1,23 @@
 package akka.ask.indexer.application;
 
 import akka.Done;
-import akka.ask.common.OpenAiUtils;
 import akka.javasdk.annotations.ComponentId;
+import akka.javasdk.client.ComponentClient;
 import akka.javasdk.workflow.Workflow;
-import com.mongodb.client.MongoClient;
-import dev.langchain4j.data.document.BlankDocumentException;
-import dev.langchain4j.data.document.DefaultDocument;
-import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.DocumentSplitter;
-import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.document.parser.TextDocumentParser;
-import dev.langchain4j.data.document.splitter.DocumentByCharacterSplitter;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.store.embedding.mongodb.MongoDbEmbeddingStore;
+import akka.javasdk.workflow.WorkflowContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
 
 /**
@@ -37,76 +27,149 @@ import java.util.stream.Stream;
 @ComponentId("rag-indexing-workflow")
 public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
-
   private final Logger logger = LoggerFactory.getLogger(getClass());
-  private final OpenAiEmbeddingModel embeddingModel;
-  private final MongoDbEmbeddingStore embeddingStore;
-  private final DocumentSplitter splitter;
-  // metadata key used to store file name
-  private final String srcKey = "src";
-  private static final String PROCESSING_FILE_STEP = "processing-file";
+
+  private final ComponentClient componentClient;
+
+  private static final String ALLOCATE_FILES = "allocate-files";
+
+  private final String workflowId;
+
+  public RagIndexingWorkflow(WorkflowContext context, ComponentClient componentClient) {
+    this.componentClient = componentClient;
+    this.workflowId = context.workflowId();
+  }
 
 
-  private final CompletionStage<Done> futDone = CompletableFuture.completedFuture(Done.getInstance());
+  record Allocation(String workerId, Path path) {
+  }
 
-  public record State(List<Path> toProcess, List<Path> processed) {
-
-    public static State of(List<Path> toProcess) {
-      return new State(toProcess, new ArrayList<>());
+  record Allocated(String workerId, Path path) {
+    public static Allocated empty() {
+      return new Allocated("", null);
     }
 
-    public Optional<Path> head() {
+    public boolean isEmpty() {
+      return path == null;
+    }
+  }
+
+  enum Status {
+    IDLE,
+    RUNNING,
+    PAUSED,
+    ABORTING;
+  }
+
+  public record State(int initialSize,
+                      List<Path> toProcess,
+                      List<Path> failedFiles,
+                      List<String> freeWorkers,
+                      Map<String, String> allocations, Status status) {
+
+    public static State empty() {
+      return new State(0, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new HashMap<>(), Status.IDLE);
+    }
+
+    public static State running(List<Path> toProcess, List<String> freeWorkers) {
+      return new State(toProcess.size(), toProcess, new ArrayList<>(), freeWorkers, new HashMap<>(), Status.RUNNING);
+    }
+
+    public State resume() {
+      return new State(initialSize, toProcess, failedFiles, freeWorkers, allocations, Status.RUNNING);
+    }
+
+    public State pause() {
+      return new State(initialSize, toProcess, failedFiles, freeWorkers, allocations, Status.PAUSED);
+    }
+
+
+    public State abort() {
+      return new State(initialSize, toProcess, failedFiles, freeWorkers, allocations, Status.ABORTING);
+    }
+
+
+    public boolean isPaused() {
+      return status == Status.PAUSED;
+    }
+
+    public boolean isRunning() {
+      return status == Status.RUNNING;
+    }
+
+    public boolean isAborting() {
+      return status == Status.ABORTING;
+    }
+
+
+    private Optional<Path> nextDocument() {
       if (toProcess.isEmpty()) return Optional.empty();
       else return Optional.of(toProcess.getFirst());
     }
 
-    public State headProcessed() {
-      if (!toProcess.isEmpty()) {
-        processed.add(toProcess.removeFirst());
+    private Optional<String> nextFreeWorker() {
+      return freeWorkers.stream().findFirst();
+    }
+
+    private Optional<Allocation> nextAllocation() {
+      var nextDoc = nextDocument();
+      var freeWorker = nextFreeWorker();
+      if (nextDoc.isPresent() && freeWorker.isPresent()) {
+        return Optional.of(new Allocation(freeWorker.get(), nextDoc.get()));
+      } else {
+        return Optional.empty();
       }
-      return new State(toProcess, processed);
+    }
+
+    private State confirmAllocation(Allocated allocated) {
+      allocations.put(allocated.path.toString(), allocated.workerId);
+      freeWorkers.remove(allocated.workerId);
+      toProcess.remove(allocated.path);
+      return this;
+    }
+
+    public boolean hasInFlight() {
+      return !allocations.isEmpty();
     }
 
     /**
-     * @return true if workflow has one or more documents to process, false otherwise.
+     * Remove the allocation for the given path.
+     * This method is used when a worker completes a file and the allocation is removed.
+     * The worker is placed back to the free workers list.
      */
-    public boolean hasFilesToProcess() {
-      return !toProcess.isEmpty();
+    public State deallocate(Path path) {
+      var workerId = allocations.get(path.toString());
+      if (workerId != null) {
+        allocations.remove(path.toString());
+        freeWorkers.add(workerId);
+      }
+      return this;
     }
 
-    public int totalFiles() {
-      return processed.size() + toProcess.size();
+    /**
+     * Mark file as failed and also remove the allocation.
+     * Once marked as failed, the file won't be retried.
+     */
+    public State markFailed(Path path) {
+      failedFiles.add(path);
+      return deallocate(path);
     }
-    public int totalProcessed() {
-      return processed.size();
-    }
-
   }
 
   @Override
   public State emptyState() {
-    return State.of(new ArrayList<>());
+    return State.empty();
   }
 
 
-  public RagIndexingWorkflow(MongoClient mongoClient) {
-
-    this.embeddingModel = OpenAiUtils.embeddingModel();
-    this.embeddingStore =
-      MongoDbEmbeddingStore.builder()
-        .fromClient(mongoClient)
-        .databaseName("akka-docs")
-        .collectionName("embeddings")
-        .indexName("default")
-        .createIndex(true)
-        .build();
-
-    this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer());
-  }
 
   public Effect<Done> start() {
-    if (currentState().hasFilesToProcess()) {
+    if (currentState().isRunning()) {
       return effects().error("Workflow is currently processing documents");
+    } else if (currentState().isAborting()) {
+      return effects().error("Workflow is currently aborting. Please, wait until it finishes in order to restart it.");
+    } else if (currentState().isPaused()) {
+      return effects().error("Workflow is currently paused. Please, resume or abort the current workflow first.");
     } else {
 
       List<Path> documents;
@@ -121,96 +184,140 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         throw new RuntimeException(e);
       }
 
+      List<String> workers = new ArrayList<>();
+      for (int i = 0; i < 10; i++) {
+        // the worker id is derived from the workflowId and a sequential number.
+        var workerId =  workflowId + "-worker-" + i;
+        workers.add(workerId);
+      }
+
       return effects()
-        .updateState(State.of(documents))
-        .transitionTo(PROCESSING_FILE_STEP)
+        .updateState(State.running(documents, workers))
+        .transitionTo(ALLOCATE_FILES)
         .thenReply(Done.getInstance());
     }
   }
 
-  public Effect<Done> abort() {
+  public Effect<Done> markFileAsIndexed(Path path) {
+    var newState = currentState().deallocate(path);
+    logProgress("File ["+ path +"] completed.", newState);
 
-    logger.debug("Aborting workflow. Current number of pending documents {}", currentState().toProcess.size());
+    if (newState.isPaused()) {
+      // we still register worker completion when paused,
+      // but we don't initiate any new work
+      return effects()
+        .updateState(newState)
+        .pause() // remain paused and don't transition
+        .thenReply(Done.getInstance());
+
+    } else if (newState.isAborting()) {
+      // keep going until all workers finish their work
+      if (newState.hasInFlight()) {
+        return effects()
+          .updateState(newState)
+          .pause() // remain paused and don't transition
+          .thenReply(Done.getInstance());
+      } else {
+        return effects()
+          .updateState(emptyState())
+          .pause()
+          .thenReply(Done.getInstance());
+      }
+
+    } else {
+      return effects()
+        .updateState(newState)
+        .transitionTo(ALLOCATE_FILES)
+        .thenReply(Done.getInstance());
+    }
+  }
+
+
+  public Effect<Done> markFileAsFailed(Path path) {
+    var newState = currentState().markFailed(path);
+    logProgress("File to process file ["+ path +"].", newState);
     return effects()
-      .updateState(emptyState())
+      .updateState(newState)
+      .transitionTo(ALLOCATE_FILES)
+      .thenReply(Done.getInstance());
+  }
+
+  public Effect<Done> pause() {
+    logProgress("Pausing indexing", currentState());
+    return effects()
+      .updateState(currentState().pause())
       .pause()
       .thenReply(Done.getInstance());
   }
 
+  public Effect<Done> resume() {
+    logProgress("Resume indexing", currentState());
+    return effects()
+      .updateState(currentState().resume())
+      .transitionTo(ALLOCATE_FILES)
+      .thenReply(Done.getInstance());
+  }
+
+  public Effect<Done> abort() {
+    logProgress("Abort current workflow", currentState());
+    // when aborting, we pause the workflow because we don't want it to schedule new work
+    // but we want to keep the workflow in a paused state in other to collect the inflight work
+    return effects()
+      .updateState(currentState().abort())
+      .pause()
+      .thenReply(Done.getInstance());
+  }
+
+  private void logProgress(String prefix, State state) {
+
+    int inFlight = state.allocations.size();
+    int toProcessSize = state.toProcess.size();
+    var processedFiles = state.initialSize - toProcessSize - inFlight;
+
+    logger.debug("{}: in-flight workers [{}], failed files [{}]. Total progress [{}/{}]",
+      prefix,
+      inFlight,
+      state.failedFiles.size(),
+      processedFiles,
+      state.initialSize);
+  }
+
   @Override
   public WorkflowDef<State> definition() {
+    return workflow().addStep(allocateStep());
+  }
 
-    var processing =
-      step(PROCESSING_FILE_STEP)
-        .asyncCall(() -> {
-          if (currentState().hasFilesToProcess()) {
-            return indexFile(currentState().head());
+  private Step allocateStep() {
+    return step(ALLOCATE_FILES)
+      .asyncCall(() -> {
+          var allocation = currentState().nextAllocation();
+
+          if (allocation.isEmpty()) {
+            // No files to allocate anymore. We return an 'empty' allocation
+            // which pauses the workflow. This also means that the workflow is will pause.
+            return CompletableFuture.completedFuture(Allocated.empty());
+
+          } else {
+            var workerId = allocation.get().workerId;
+            var path = allocation.get().path;
+            logger.debug("RagWorkflow [{}]: allocating file [{}] to worker [{}]", workflowId, path, workerId);
+
+            return componentClient
+              .forWorkflow(workerId)
+              .method(IndexWorker::process)
+              .invokeAsync(new IndexWorker.IndexRequest(workflowId, path))
+              .thenApply(__ -> new Allocated(workerId, path));
           }
-          else
-            return futDone;
-        })
-        .andThen(Done.class, __ -> {
-            // we need to check if it hasFilesToProcess, before moving the head
-            // because if workflow is aborted, the state is cleared, and we won't have anything in the list
-            if (currentState().hasFilesToProcess()) {
-              var newState = currentState().headProcessed();
-              logger.debug("Processed {}/{}", newState.totalProcessed(), newState.totalFiles());
-              return effects().updateState(newState).transitionTo(PROCESSING_FILE_STEP);
-            } else {
-              return effects().pause();
-            }
-          }
-        );
-
-    return workflow().addStep(processing);
+        }
+      ).andThen(Allocated.class, alloc -> {
+        if (alloc.isEmpty())
+          return effects().updateState(currentState().pause()).pause();
+        else {
+          logger.debug("RagWorkflow [{}]: file [{}] allocated to worker [{}]", workflowId, alloc.path, alloc.workerId);
+          var newState = currentState().confirmAllocation(alloc);
+          return effects().updateState(newState).transitionTo(ALLOCATE_FILES);
+        }
+      });
   }
 
-
-  private CompletionStage<Done> indexFile(Optional<Path> pathOpt) {
-
-    if (pathOpt.isEmpty()) return futDone;
-    else {
-
-      var path = pathOpt.get();
-      try (InputStream input = Files.newInputStream(path)) {
-        // read file as input stream
-        Document doc = new TextDocumentParser().parse(input);
-        var docWithMetadata = new DefaultDocument(doc.text(), Metadata.metadata(srcKey, path.getFileName().toString()));
-
-        var segments = splitter.split(docWithMetadata);
-        logger.debug("Created {} segments for document {}", segments.size(), path.getFileName());
-
-        return segments
-          .stream()
-          .reduce(
-            futDone,
-            (acc, seg) -> addSegment(seg),
-            (stage1, stage2) -> futDone
-          );
-
-      } catch (BlankDocumentException e) {
-        // some documents are blank, we need to skip them
-        return futDone;
-      } catch (Exception e) {
-        logger.error("Error reading file: {} - {}", path, e.getMessage());
-        return futDone;
-      }
-    }
-  }
-
-  private CompletionStage<Done> addSegment(TextSegment seg) {
-    var fileName = seg.metadata().getString(srcKey);
-    return
-      CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
-        .thenCompose(res ->
-          CompletableFuture.supplyAsync(() -> {
-            logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
-              fileName,
-              res.tokenUsage().inputTokenCount(),
-              res.tokenUsage().outputTokenCount());
-
-            return embeddingStore.add(res.content(), seg);
-          }))
-        .thenApply(__ -> Done.getInstance());
-  }
 }
