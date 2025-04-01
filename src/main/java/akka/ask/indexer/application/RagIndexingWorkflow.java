@@ -201,9 +201,20 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   public Effect<Done> markFileAsIndexed(Path path) {
     var newState = currentState().deallocate(path);
     logProgress("File ["+ path +"] completed.", newState);
+    return handleWorkerCall(newState, path);
+  }
 
+
+  public Effect<Done> markFileAsFailed(Path path) {
+    var newState = currentState().markFailed(path);
+    logProgress("File to process file ["+ path +"].", newState);
+    return handleWorkerCall(newState, path);
+  }
+
+
+  private Effect<Done> handleWorkerCall(State newState, Path path) {
     if (newState.isPaused()) {
-      // we still register worker completion when paused,
+      // we still register worker call when paused,
       // but we don't initiate any new work
       return effects()
         .updateState(newState)
@@ -230,16 +241,6 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         .transitionTo(ALLOCATE_FILES)
         .thenReply(Done.getInstance());
     }
-  }
-
-
-  public Effect<Done> markFileAsFailed(Path path) {
-    var newState = currentState().markFailed(path);
-    logProgress("File to process file ["+ path +"].", newState);
-    return effects()
-      .updateState(newState)
-      .transitionTo(ALLOCATE_FILES)
-      .thenReply(Done.getInstance());
   }
 
   public Effect<Done> pause() {
