@@ -12,7 +12,6 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
-import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
@@ -39,9 +38,9 @@ import java.util.concurrent.CompletionStage;
  * and AI message) are saved to the SessionEntity.
  *
  */
-public class AgentService {
+public class AskAkkaAgent {
 
-  private final static Logger logger = LoggerFactory.getLogger(AgentService.class);
+  private final static Logger logger = LoggerFactory.getLogger(AskAkkaAgent.class);
   private final ComponentClient componentClient;
   private final MongoClient mongoClient;
 
@@ -58,7 +57,7 @@ public class AgentService {
     TokenStream chat(String message);
   }
 
-  public AgentService(ComponentClient componentClient, MongoClient mongoClient) {
+  public AskAkkaAgent(ComponentClient componentClient, MongoClient mongoClient) {
     this.componentClient = componentClient;
     this.mongoClient = mongoClient;
 
