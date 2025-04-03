@@ -1,6 +1,6 @@
 package akka.ask.agent.api;
 
-import akka.ask.agent.application.AgentService;
+import akka.ask.agent.application.AskAkkaAgent;
 import akka.ask.agent.application.StreamedResponse;
 import akka.http.javadsl.model.HttpResponse;
 import akka.javasdk.annotations.Acl;
@@ -18,11 +18,11 @@ public class AskHttpEndpoint {
   }
 
   private final ComponentClient componentClient;
-  private final AgentService agentService;
+  private final AskAkkaAgent askAkkaAgent;
   private final Materializer materializer;
 
-  public AskHttpEndpoint(AgentService agentService, Materializer materializer, ComponentClient componentClient) {
-    this.agentService = agentService;
+  public AskHttpEndpoint(AskAkkaAgent askAkkaAgent, Materializer materializer, ComponentClient componentClient) {
+    this.askAkkaAgent = askAkkaAgent;
     this.materializer = materializer;
     this.componentClient = componentClient;
   }
@@ -33,7 +33,7 @@ public class AskHttpEndpoint {
   @Post("/ask")
   public HttpResponse ask(QueryRequest request) {
 
-    var response = agentService
+    var response = askAkkaAgent
         .ask(request.userId, request.sessionId, request.question)
         .map(StreamedResponse::content);
 
