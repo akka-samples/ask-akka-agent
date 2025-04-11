@@ -1,6 +1,7 @@
 # Ask Akka Agentic AI Example
 A proof of concept illustrating how to build an Agentic RAG workflow with Akka.
 
+
 # OpenAi and MongoDb Atlas
 
 This sample requires OpenAI API Key and a MongoDb Atlas URI. 
