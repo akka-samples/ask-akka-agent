@@ -19,20 +19,20 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
-
-  public record Exchange(String userId,
-                         String sessionId,
-                         String userQuestion,
-                         int queryTokensCount,
-                         String assistantResponse,
-                         int responseTokensCount){}
-
+  public record Exchange(String userId, // <1>
+      String sessionId,
+      String userQuestion,
+      int queryTokensCount,
+      String assistantResponse,
+      int responseTokensCount) {
+  }
 
   enum MessageType {
     AI,
     USER
   }
-  public record Message(String content, MessageType type) {
+
+  public record Message(String content, MessageType type) { // <2>
   }
 
   public record State(List<Message> messages, int totalTokenUsage) {
@@ -57,31 +57,28 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
 
     var now = Instant.now();
 
-    var userEvt =
-      new SessionEvent.UserMessageAdded(
+    var userEvt = new SessionEvent.UserMessageAdded(
         exchange.userId,
         exchange.sessionId,
         exchange.userQuestion,
         exchange.queryTokensCount,
         now);
 
-    var assistantEvt =
-    new SessionEvent.AiMessageAdded(
-      exchange.userId,
-      exchange.sessionId,
-      exchange.assistantResponse,
-      exchange.responseTokensCount,
-      now);
+    var assistantEvt = new SessionEvent.AiMessageAdded(
+        exchange.userId,
+        exchange.sessionId,
+        exchange.assistantResponse,
+        exchange.responseTokensCount, // <3>
+        now);
 
     return effects()
-        .persist(userEvt, assistantEvt)
+        .persist(userEvt, assistantEvt) // <4>
         .thenReply(__ -> Done.getInstance());
   }
 
   public Effect<Messages> getHistory() {
     logger.debug("Getting history from {}", commandContext().entityId());
-    return
-      effects().reply(new Messages(currentState().messages));
+    return effects().reply(new Messages(currentState().messages));
   }
 
   @Override
@@ -94,14 +91,13 @@ public class SessionEntity extends EventSourcedEntity<SessionEntity.State, Sessi
     return switch (event) {
       case SessionEvent.UserMessageAdded msg ->
         currentState()
-          .add(new Message(msg.query(), USER))
-          .addTokenUsage(msg.tokensUsed());
+            .add(new Message(msg.query(), USER))
+            .addTokenUsage(msg.tokensUsed());
 
       case SessionEvent.AiMessageAdded msg ->
         currentState()
-          .add(new Message(msg.response(), AI))
-          .addTokenUsage(msg.tokensUsed());
+            .add(new Message(msg.response(), AI))
+            .addTokenUsage(msg.tokensUsed());
     };
   }
-
 }
