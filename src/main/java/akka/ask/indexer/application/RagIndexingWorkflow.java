@@ -31,12 +31,12 @@ import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
 
 /**
- * This workflow reads the files under src/main/resources/flat-doc/ and create the vector embeddings that are later
+ * This workflow reads the files under src/main/resources/flat-doc/ and create
+ * the vector embeddings that are later
  * used to augment the LLM context.
  */
 @ComponentId("rag-indexing-workflow")
 public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
-
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private final OpenAiEmbeddingModel embeddingModel;
@@ -46,18 +46,19 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   private final String srcKey = "src";
   private static final String PROCESSING_FILE_STEP = "processing-file";
 
-
   private final CompletionStage<Done> futDone = CompletableFuture.completedFuture(Done.getInstance());
 
-  public record State(List<Path> toProcess, List<Path> processed) {
+  public record State(List<Path> toProcess, List<Path> processed) { // <1>
 
     public static State of(List<Path> toProcess) {
       return new State(toProcess, new ArrayList<>());
     }
 
-    public Optional<Path> head() {
-      if (toProcess.isEmpty()) return Optional.empty();
-      else return Optional.of(toProcess.getFirst());
+    public Optional<Path> head() { // <2>
+      if (toProcess.isEmpty())
+        return Optional.empty();
+      else
+        return Optional.of(toProcess.getFirst());
     }
 
     public State headProcessed() {
@@ -68,7 +69,8 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
     }
 
     /**
-     * @return true if workflow has one or more documents to process, false otherwise.
+     * @return true if workflow has one or more documents to process, false
+     *         otherwise.
      */
     public boolean hasFilesToProcess() {
       return !toProcess.isEmpty();
@@ -77,10 +79,10 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
     public int totalFiles() {
       return processed.size() + toProcess.size();
     }
+
     public int totalProcessed() {
       return processed.size();
     }
-
   }
 
   @Override
@@ -88,12 +90,9 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
     return State.of(new ArrayList<>());
   }
 
-
   public RagIndexingWorkflow(MongoClient mongoClient) {
-
     this.embeddingModel = OpenAiUtils.embeddingModel();
-    this.embeddingStore =
-      MongoDbEmbeddingStore.builder()
+    this.embeddingStore = MongoDbEmbeddingStore.builder()
         .fromClient(mongoClient)
         .databaseName("akka-docs")
         .collectionName("embeddings")
@@ -101,30 +100,29 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         .createIndex(true)
         .build();
 
-    this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer());
+    this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer()); // <1>
   }
 
   public Effect<Done> start() {
     if (currentState().hasFilesToProcess()) {
       return effects().error("Workflow is currently processing documents");
     } else {
-
       List<Path> documents;
       var documentsDirectoryPath = getClass().getClassLoader().getResource("flat-doc").getPath();
 
       try (Stream<Path> paths = Files.walk(Paths.get(documentsDirectoryPath))) {
         documents = paths
-          .filter(Files::isRegularFile)
-          .filter(path -> path.toString().endsWith(".md"))
-          .toList();
+            .filter(Files::isRegularFile)
+            .filter(path -> path.toString().endsWith(".md"))
+            .toList();
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
 
       return effects()
-        .updateState(State.of(documents))
-        .transitionTo(PROCESSING_FILE_STEP)
-        .thenReply(Done.getInstance());
+          .updateState(State.of(documents))
+          .transitionTo(PROCESSING_FILE_STEP) // <1>
+          .thenReply(Done.getInstance());
     }
   }
 
@@ -132,43 +130,41 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
     logger.debug("Aborting workflow. Current number of pending documents {}", currentState().toProcess.size());
     return effects()
-      .updateState(emptyState())
-      .pause()
-      .thenReply(Done.getInstance());
+        .updateState(emptyState())
+        .pause()
+        .thenReply(Done.getInstance());
   }
 
   @Override
   public WorkflowDef<State> definition() {
 
-    var processing =
-      step(PROCESSING_FILE_STEP)
+    var processing = step(PROCESSING_FILE_STEP) // <1>
         .asyncCall(() -> {
           if (currentState().hasFilesToProcess()) {
             return indexFile(currentState().head());
-          }
-          else
+          } else
             return futDone;
         })
         .andThen(Done.class, __ -> {
-            // we need to check if it hasFilesToProcess, before moving the head
-            // because if workflow is aborted, the state is cleared, and we won't have anything in the list
-            if (currentState().hasFilesToProcess()) {
-              var newState = currentState().headProcessed();
-              logger.debug("Processed {}/{}", newState.totalProcessed(), newState.totalFiles());
-              return effects().updateState(newState).transitionTo(PROCESSING_FILE_STEP);
-            } else {
-              return effects().pause();
-            }
+          // we need to check if it hasFilesToProcess, before moving the head
+          // because if workflow is aborted, the state is cleared, and we won't have
+          // anything in the list
+          if (currentState().hasFilesToProcess()) { // <2>
+            var newState = currentState().headProcessed();
+            logger.debug("Processed {}/{}", newState.totalProcessed(), newState.totalFiles());
+            return effects().updateState(newState).transitionTo(PROCESSING_FILE_STEP); // <3>
+          } else {
+            return effects().pause(); // <4>
           }
-        );
+        });
 
     return workflow().addStep(processing);
   }
 
-
   private CompletionStage<Done> indexFile(Optional<Path> pathOpt) {
 
-    if (pathOpt.isEmpty()) return futDone;
+    if (pathOpt.isEmpty())
+      return futDone;
     else {
 
       var path = pathOpt.get();
@@ -181,12 +177,11 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         logger.debug("Created {} segments for document {}", segments.size(), path.getFileName());
 
         return segments
-          .stream()
-          .reduce(
-            futDone,
-            (acc, seg) -> addSegment(seg),
-            (stage1, stage2) -> futDone
-          );
+            .stream()
+            .reduce(
+                futDone,
+                (acc, seg) -> addSegment(seg),
+                (stage1, stage2) -> futDone);
 
       } catch (BlankDocumentException e) {
         // some documents are blank, we need to skip them
@@ -200,17 +195,15 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
   private CompletionStage<Done> addSegment(TextSegment seg) {
     var fileName = seg.metadata().getString(srcKey);
-    return
-      CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
-        .thenCompose(res ->
-          CompletableFuture.supplyAsync(() -> {
-            logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
+    return CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
+        .thenCompose(res -> CompletableFuture.supplyAsync(() -> {
+          logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
               fileName,
               res.tokenUsage().inputTokenCount(),
               res.tokenUsage().outputTokenCount());
 
-            return embeddingStore.add(res.content(), seg);
-          }))
+          return embeddingStore.add(res.content(), seg); // <1>
+        }))
         .thenApply(__ -> Done.getInstance());
   }
 }
