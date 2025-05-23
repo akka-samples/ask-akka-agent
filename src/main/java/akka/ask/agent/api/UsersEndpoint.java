@@ -13,7 +13,6 @@ import akka.javasdk.client.ComponentClient;
 @HttpEndpoint("/api")
 public class UsersEndpoint {
 
-
   private final ComponentClient componentClient;
 
   public UsersEndpoint(ComponentClient componentClient) {
@@ -27,5 +26,4 @@ public class UsersEndpoint {
         .method(ConversationHistoryView::getSessionsByUser)
         .invoke(userId);
   }
-
 }

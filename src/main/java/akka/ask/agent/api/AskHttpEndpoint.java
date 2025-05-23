@@ -18,7 +18,7 @@ public class AskHttpEndpoint {
   }
 
   private final ComponentClient componentClient;
-  private final AskAkkaAgent askAkkaAgent;
+  private final AskAkkaAgent askAkkaAgent; // <1>
   private final Materializer materializer;
 
   public AskHttpEndpoint(AskAkkaAgent askAkkaAgent, Materializer materializer, ComponentClient componentClient) {
@@ -35,10 +35,8 @@ public class AskHttpEndpoint {
 
     var response = askAkkaAgent
         .ask(request.userId, request.sessionId, request.question)
-        .map(StreamedResponse::content);
+        .map(StreamedResponse::content); // <2>
 
-    return HttpResponses.serverSentEvents(response);
+    return HttpResponses.serverSentEvents(response); // <3>
   }
-
-
 }
