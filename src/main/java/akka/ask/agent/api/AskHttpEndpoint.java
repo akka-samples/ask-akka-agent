@@ -8,6 +8,7 @@ import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
 import akka.javasdk.http.HttpResponses;
 
+// tag::endpoint[]
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api")
 public class AskHttpEndpoint {
@@ -37,3 +38,4 @@ public class AskHttpEndpoint {
   }
 
 }
+// end::endpoint[]

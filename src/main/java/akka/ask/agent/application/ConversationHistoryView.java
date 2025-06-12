@@ -12,6 +12,7 @@ import akka.javasdk.annotations.Query;
 import akka.javasdk.view.TableUpdater;
 import akka.javasdk.view.View;
 
+// tag::top[]
 @ComponentId("view_chat_log")
 public class ConversationHistoryView extends View {
 
@@ -83,3 +84,4 @@ public class ConversationHistoryView extends View {
     }
   }
 }
+// end::top[]

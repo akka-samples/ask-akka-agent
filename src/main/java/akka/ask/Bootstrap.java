@@ -8,8 +8,11 @@ import akka.javasdk.annotations.Setup;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 
+// tag::mongodb[]
+// tag::knowledge[]
 @Setup
 public class Bootstrap implements ServiceSetup {
+  // end::knowledge[]
   public Bootstrap() {
     if (!KeyUtils.hasValidKeys()) {
       throw new IllegalStateException(
@@ -18,12 +21,15 @@ public class Bootstrap implements ServiceSetup {
               "make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
     }
   }
+  // tag::knowledge[]
 
   @Override
   public DependencyProvider createDependencyProvider() {
     MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri());
 
+    // end::mongodb[]
     Knowledge knowledge = new Knowledge(mongoClient);
+    // tag::mongodb[]
 
     return new DependencyProvider() {
       @Override
@@ -32,12 +38,16 @@ public class Bootstrap implements ServiceSetup {
           return (T) mongoClient;
         }
 
+        // end::mongodb[]
         if (cls.equals(Knowledge.class)) {
           return (T) knowledge;
         }
+        // tag::mongodb[]
 
         return null;
       }
     };
   }
 }
+// end::knowledge[]
+// end::mongodb[]

@@ -1,5 +1,6 @@
 package akka.ask.agent.application;
 
+// tag::class[]
 import akka.ask.common.MongoDbUtils;
 import akka.ask.common.OpenAiUtils;
 import com.mongodb.client.MongoClient;
@@ -41,3 +42,4 @@ public class Knowledge {
   }
 
 }
+// end::class[]
