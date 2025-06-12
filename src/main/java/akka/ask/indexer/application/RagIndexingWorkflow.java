@@ -35,6 +35,7 @@ import static akka.Done.done;
  * the vector embeddings that are later
  * used to augment the LLM context.
  */
+// tag::shell[]
 @ComponentId("rag-indexing-workflow")
 public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
@@ -88,7 +89,9 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   public State emptyState() {
     return State.of(new ArrayList<>());
   }
+  // end::shell[]
 
+  // tag::cons[]
   public RagIndexingWorkflow(MongoClient mongoClient) {
     this.embeddingModel = OpenAiUtils.embeddingModel();
     this.embeddingStore = MongoDbEmbeddingStore.builder()
@@ -99,9 +102,11 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         .createIndex(true)
         .build();
 
-    this.splitter = new DocumentByCharacterSplitter(500, 50, OpenAiUtils.buildTokenizer()); // <1>
+    this.splitter = new DocumentByCharacterSplitter(500, 50); // <1>
   }
+  // end::cons[]
 
+  // tag::start[]
   public Effect<Done> start() {
     if (currentState().hasFilesToProcess()) {
       return effects().error("Workflow is currently processing documents");
@@ -124,6 +129,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
           .thenReply(done());
     }
   }
+  // end::start[]
 
   public Effect<Done> abort() {
 
@@ -134,6 +140,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
         .thenReply(done());
   }
 
+  // tag::def[]
   @Override
   public WorkflowDef<State> definition() {
 
@@ -159,7 +166,9 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
     return workflow().addStep(processing);
   }
+  // end::def[]
 
+  // tag::index[]
   private void indexFile(Path path) {
     try (InputStream input = Files.newInputStream(path)) {
       // read file as input stream
@@ -176,7 +185,9 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
       logger.error("Error reading file: {} - {}", path, e.getMessage());
     }
   }
+  // end::index[]
 
+  // tag::add[]
   private void addSegment(TextSegment seg) {
     var fileName = seg.metadata().getString(srcKey);
     var res = embeddingModel.embed(seg);
@@ -188,4 +199,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
 
     embeddingStore.add(res.content(), seg); // <1>
   }
+  // end::add[]
+  // tag::shell[]
 }
+// end::shell[]
