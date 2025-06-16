@@ -10,7 +10,6 @@ import akka.javasdk.http.HttpResponses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-// tag::class[]
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 @HttpEndpoint("/api/index")
 public class IndexerEndpoint {
@@ -39,4 +38,3 @@ public class IndexerEndpoint {
     return HttpResponses.accepted();
   }
 }
-// end::class[]

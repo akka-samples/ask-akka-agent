@@ -4,7 +4,6 @@ import akka.javasdk.agent.Agent;
 import akka.javasdk.annotations.AgentDescription;
 import akka.javasdk.annotations.ComponentId;
 
-// tag::class[]
 @ComponentId("ask-akka-agent")
 @AgentDescription(name = "Ask Akka", description = "Expert in Akka")
 public class AskAkkaAgent extends Agent {
@@ -32,4 +31,3 @@ public class AskAkkaAgent extends Agent {
   }
 
 }
-// end::class[]
