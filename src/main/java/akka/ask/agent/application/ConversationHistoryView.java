@@ -12,7 +12,6 @@ import akka.javasdk.annotations.Query;
 import akka.javasdk.view.TableUpdater;
 import akka.javasdk.view.View;
 
-// tag::top[]
 @ComponentId("view_chat_log")
 public class ConversationHistoryView extends View {
 
@@ -49,13 +48,13 @@ public class ConversationHistoryView extends View {
     }
 
     private Effect<Session> aiMessage(SessionMemoryEntity.Event.AiMessageAdded added) {
-      Message newMessage = new Message(added.message(), "ai", added.timestamp());
+      Message newMessage = new Message(added.message(), "ai", added.timestamp().toEpochMilli());
       var rowState = rowStateOrNew(userId(), sessionId());
       return effects().updateRow(rowState.add(newMessage));
     }
 
     private Effect<Session> userMessage(SessionMemoryEntity.Event.UserMessageAdded added) {
-      Message newMessage = new Message(added.message(), "user", added.timestamp());
+      Message newMessage = new Message(added.message(), "user", added.timestamp().toEpochMilli());
       var rowState = rowStateOrNew(userId(), sessionId());
       return effects().updateRow(rowState.add(newMessage));
     }
@@ -84,4 +83,3 @@ public class ConversationHistoryView extends View {
     }
   }
 }
-// end::top[]
