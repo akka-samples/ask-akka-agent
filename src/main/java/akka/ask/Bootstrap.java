@@ -8,28 +8,20 @@ import akka.javasdk.annotations.Setup;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 
-// tag::mongodb[]
-// tag::knowledge[]
 @Setup
 public class Bootstrap implements ServiceSetup {
-  // end::knowledge[]
   public Bootstrap() {
     if (!KeyUtils.hasValidKeys()) {
       throw new IllegalStateException(
-          "No API keys found. When running locally, make sure you have a " + ".env.local file located under " +
-              "src/main/resources/ (see src/main/resources/.env.example). When running in production, " +
-              "make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
+          "No API keys found. Make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI defined as environment variable.");
     }
   }
-  // tag::knowledge[]
 
   @Override
   public DependencyProvider createDependencyProvider() {
     MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri());
 
-    // end::mongodb[]
     Knowledge knowledge = new Knowledge(mongoClient);
-    // tag::mongodb[]
 
     return new DependencyProvider() {
       @Override
@@ -38,16 +30,12 @@ public class Bootstrap implements ServiceSetup {
           return (T) mongoClient;
         }
 
-        // end::mongodb[]
         if (cls.equals(Knowledge.class)) {
           return (T) knowledge;
         }
-        // tag::mongodb[]
 
         return null;
       }
     };
   }
 }
-// end::knowledge[]
-// end::mongodb[]
