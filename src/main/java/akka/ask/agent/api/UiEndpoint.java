@@ -10,7 +10,6 @@ import akka.javasdk.http.HttpResponses;
  * This Http endpoint returns the static UI page located under
  * src/main/resources/static-resources/
  */
-// tag::endpoint[]
 @HttpEndpoint
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
 public class UiEndpoint {
@@ -19,4 +18,3 @@ public class UiEndpoint {
     return HttpResponses.staticResource("index.html"); // <1>
   }
 }
-// end::endpoint[]
