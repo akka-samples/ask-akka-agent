@@ -12,8 +12,7 @@ import akka.javasdk.http.HttpResponses;
 @HttpEndpoint("/api")
 public class AskHttpEndpoint {
 
-  public record QueryRequest(String userId, String sessionId, String question) {
-  }
+  public record QueryRequest(String userId, String sessionId, String question) {}
 
   private final ComponentClient componentClient;
 
@@ -28,12 +27,11 @@ public class AskHttpEndpoint {
   public HttpResponse ask(QueryRequest request) {
     var sessionId = request.userId() + "-" + request.sessionId();
     var responseStream = componentClient
-        .forAgent()
-        .inSession(sessionId)
-        .tokenStream(AskAkkaAgent::ask)
-        .source(request.question); // <2>
+      .forAgent()
+      .inSession(sessionId)
+      .tokenStream(AskAkkaAgent::ask)
+      .source(request.question); // <2>
 
     return HttpResponses.serverSentEvents(responseStream); // <3>
   }
-
 }
