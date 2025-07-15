@@ -7,21 +7,23 @@ import akka.javasdk.ServiceSetup;
 import akka.javasdk.annotations.Setup;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.typesafe.config.Config;
 
 @Setup
 public class Bootstrap implements ServiceSetup {
-  public Bootstrap() {
-    if (!KeyUtils.hasValidKeys()) {
-      throw new IllegalStateException(
-          "No API keys found. Make sure you have OPENAI_API_KEY and MONGODB_ATLAS_URI " +
-              "defined as environment variable.");
-    }
+
+  private Config config;
+
+
+  public Bootstrap(Config config) {
+    this.config = config;
+    KeyUtils.checkKeys(config);
   }
+
 
   @Override
   public DependencyProvider createDependencyProvider() {
-    MongoClient mongoClient = MongoClients.create(KeyUtils.readMongoDbUri());
-
+    MongoClient mongoClient = MongoClients.create(config.getString("mongodb.uri"));
     Knowledge knowledge = new Knowledge(mongoClient);
 
     return new DependencyProvider() {
@@ -30,7 +32,6 @@ public class Bootstrap implements ServiceSetup {
         if (cls.equals(MongoClient.class)) {
           return (T) mongoClient;
         }
-
         if (cls.equals(Knowledge.class)) {
           return (T) knowledge;
         }
