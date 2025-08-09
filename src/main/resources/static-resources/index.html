@@ -8,6 +8,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.21.2/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
+    <!-- Markdown sanitation and highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.1/js.cookie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
@@ -254,558 +259,592 @@
 <div id="root"></div>
 
 <script type="text/babel">
-  const { useState, useEffect, useRef } = React;
-  const { marked } = window;
-  const { Cookies } = window;
-  const { v4: uuidv4 } = window.uuid;
+    const { useState, useEffect, useRef } = React;
+    const { marked } = window;
 
-  // User session cookie name
-  const USER_COOKIE = "ai_chat_user_id";
+    // Configure Marked for chat content and wire up syntax highlighting
+    try {
+      marked.setOptions({
+        gfm: true,
+        breaks: true,
+        highlight: function(code, lang) {
+          try {
+            if (lang && window.hljs && hljs.getLanguage(lang)) {
+              return hljs.highlight(code, { language: lang }).value;
+            } else if (window.hljs) {
+              return hljs.highlightAuto(code).value;
+            }
+          } catch (e) {
+            // fall back to escaping
+          }
+          return code;
+        }
+      });
+    } catch (e) { /* ignore */ }
 
-  // Utility function to parse SSE response
-  const parseSSE = (data) => {
-    if (!data) return null;
-    if (data.startsWith('data:')) {
-      return data.substring(5).trim();
+    // Remove outer ```markdown / ```md fences when the whole reply is fenced
+    function unwrapMarkdownFences(s) {
+      if (!s) return s;
+      const t = s.trim();
+      const m = t.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i);
+      if (m) return m[1];
+      // Handle streaming cases where the closing fence hasn't arrived yet
+      const firstLine = t.split('\n')[0];
+      if (/^```(?:markdown|md)?\s*$/i.test(firstLine)) {
+        return t.split('\n').slice(1).join('\n');
+      }
+      return s;
     }
-    return data;
-  };
+    const { Cookies } = window;
+    const { v4: uuidv4 } = window.uuid;
+
+    // User session cookie name
+    const USER_COOKIE = "ai_chat_user_id";
+
+    // Utility function to parse SSE response
+    const parseSSE = (data) => {
+      if (!data) return null;
+      if (data.startsWith('data:')) {
+        return data.substring(5).trim();
+      }
+      return data;
+    };
 
 
-  // Main App component
-  function App() {
-    const [userId, setUserId] = useState("");
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [error, setError] = useState("");
+    // Main App component
+    function App() {
+      const [userId, setUserId] = useState("");
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [error, setError] = useState("");
 
-    // Check for saved user cookie on component mount
-    useEffect(() => {
-      const savedUserId = Cookies.get(USER_COOKIE);
-      if (savedUserId) {
-        setUserId(savedUserId);
+      // Check for saved user cookie on component mount
+      useEffect(() => {
+        const savedUserId = Cookies.get(USER_COOKIE);
+        if (savedUserId) {
+          setUserId(savedUserId);
+          setIsLoggedIn(true);
+        }
+      }, []);
+
+      // Handle login
+      const handleLogin = () => {
+        if (userId.trim().length < 3) {
+          setError("User ID must be at least 3 characters");
+          return;
+        }
+
+        // Save user ID to cookie (expires in 7 days)
+        Cookies.set(USER_COOKIE, userId, { expires: 7 });
+
+        setError("");
         setIsLoggedIn(true);
-      }
-    }, []);
+      };
 
-    // Handle login
-    const handleLogin = () => {
-      if (userId.trim().length < 3) {
-        setError("User ID must be at least 3 characters");
-        return;
-      }
+      // Handle logout
+      const handleLogout = () => {
+        // Remove the user cookie
+        Cookies.remove(USER_COOKIE);
+        setUserId("");
+        setIsLoggedIn(false);
+      };
 
-      // Save user ID to cookie (expires in 7 days)
-      Cookies.set(USER_COOKIE, userId, { expires: 7 });
-
-      setError("");
-      setIsLoggedIn(true);
-    };
-
-    // Handle logout
-    const handleLogout = () => {
-      // Remove the user cookie
-      Cookies.remove(USER_COOKIE);
-      setUserId("");
-      setIsLoggedIn(false);
-    };
-
-    return (
-      <div className="h-screen">
-        <div className="h-full flex flex-col">
-          <div className="flex justify-between items-center py-4 px-4 flex-shrink-0 shadow-sm">
-            <div className="flex items-center">
-              <h1 className="text-3xl font-bold text-blue-600">Ask Akka Demo</h1>
-              <span className="text-sm text-gray-500 ml-4">User ID: {userId}</span>
-            </div>
-            {isLoggedIn && (
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={handleLogout}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-                >
-                  Logout
-                </button>
+      return (
+        <div className="h-screen">
+          <div className="h-full flex flex-col">
+            <div className="flex justify-between items-center py-4 px-4 flex-shrink-0 shadow-sm">
+              <div className="flex items-center">
+                <h1 className="text-3xl font-bold text-blue-600">Ask Akka Demo</h1>
+                <span className="text-sm text-gray-500 ml-4">User ID: {userId}</span>
               </div>
-            )}
+              {isLoggedIn && (
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={handleLogout}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-grow overflow-hidden">
+              {!isLoggedIn ? (
+                <LoginScreen
+                  userId={userId}
+                  setUserId={setUserId}
+                  handleLogin={handleLogin}
+                  error={error}
+                />
+              ) : (
+                <ChatInterface userId={userId} />
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Login Screen component
+    function LoginScreen({ userId, setUserId, handleLogin, error }) {
+      return (
+        <div className="max-w-md mx-auto mt-16 p-8 rounded-lg shadow-md">
+          <h2 className="text-xl font-semibold mb-4">Welcome to AI Chat</h2>
+          <p className="text-gray-600 mb-6">Please enter a unique ID to continue</p>
+
+          <div className="mb-4">
+            <label htmlFor="userId" className="block text-sm font-medium text-gray-700 mb-1">
+              User ID
+            </label>
+            <input
+              type="text"
+              id="userId"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              placeholder="Enter your user ID"
+              onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+            />
           </div>
 
-          <div className="flex-grow overflow-hidden">
-            {!isLoggedIn ? (
-              <LoginScreen
+          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+          <button
+            onClick={handleLogin}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Continue
+          </button>
+        </div>
+      );
+    }
+
+    // Chat Interface component with sidebar
+    function ChatInterface({ userId }) {
+      const [sessions, setSessions] = useState([]);
+      const [currentSession, setCurrentSession] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      // Load sessions from the backend API
+      useEffect(() => {
+        fetchSessions();
+      }, [userId]);
+
+      const fetchSessions = async () => {
+        try {
+          setLoading(true);
+          const response = await fetch(`/api/users/${userId}/sessions`);
+
+          if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          // Transform the API response to match the expected format
+          const transformedSessions = data.sessions.map(session => ({
+            id: session.sessionId,
+            title: `Conversation from ${formatDate(session.creationDate)}`,
+            timestamp: new Date(session.creationDate).toISOString(),
+            conversationHistory: session.messages.map(msg => ({
+              type: msg.origin,  // convert 'origin' to 'type'
+              message: msg.message
+            }))
+          }));
+
+          setSessions(transformedSessions || []);
+        } catch (err) {
+          console.error("Error fetching sessions:", err);
+          setError("Failed to load your previous conversations");
+          // Set empty array as fallback
+          setSessions([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Utility function to format timestamps
+      const formatDate = (timestamp) => {
+        const date = new Date(timestamp);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      };
+
+      // Create new session
+      const createNewSession = () => {
+        const newSession = {
+          id: uuidv4(),
+          title: "New Conversation",
+          timestamp: new Date().toISOString(),
+          conversationHistory: []
+        };
+
+        setSessions([newSession, ...sessions]);
+        setCurrentSession(newSession);
+      };
+
+      // Open existing session
+      const openSession = (session) => {
+        setCurrentSession(session);
+      };
+
+      // Save session (local update after backend interaction)
+      const saveSession = (updatedSession) => {
+        const updatedSessions = sessions.map(s =>
+          s.id === updatedSession.id ? updatedSession : s
+        );
+
+        setSessions(updatedSessions);
+        setCurrentSession(updatedSession);
+      };
+
+      return (
+        <div className="h-full flex">
+          {/* Sidebar - Sessions List */}
+          <div className="relative border-r overflow-y-auto w-80">
+            <div className="p-4 border-b">
+              <button
+                onClick={createNewSession}
+                className="w-full py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                New Chat
+              </button>
+            </div>
+
+            <div className="overflow-y-auto">
+              {loading ? (
+                <div className="text-center p-8 text-gray-500">
+                  <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Loading...
+                </div>
+              ) : error ? (
+                <div className="text-center p-8 text-red-500">
+                  {error}
+                  <p className="mt-2 text-gray-500">Try creating a new chat.</p>
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="text-center p-8 text-gray-500">
+                  No conversations yet. Start a new chat!
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-200">
+                  {sessions.map((session) => (
+                    <li
+                      key={session.id}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer ${
+                        currentSession && currentSession.id === session.id
+                          ? 'bg-blue-50 border-l-4 border-blue-500'
+                          : ''
+                      }`}
+                      onClick={() => openSession(session)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1 overflow-hidden">
+                          <h3 className="font-medium truncate">{session.title}</h3>
+                          <p className="text-sm text-gray-500 truncate-2">
+                            {session.conversationHistory && session.conversationHistory.length > 0
+                              ? session.conversationHistory[session.conversationHistory.length - 1].message.substring(0, 100) + (session.conversationHistory[session.conversationHistory.length - 1].message.length > 100 ? '...' : '')
+                              : "Empty conversation"}
+                          </p>
+                        </div>
+                        <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
+                          {new Date(session.timestamp).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          {/* Main Chat Area */}
+          <div className="flex-1">
+            {currentSession ? (
+              <ChatScreen
+                session={currentSession}
+                saveSession={saveSession}
                 userId={userId}
-                setUserId={setUserId}
-                handleLogin={handleLogin}
-                error={error}
               />
             ) : (
-              <ChatInterface userId={userId} />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Login Screen component
-  function LoginScreen({ userId, setUserId, handleLogin, error }) {
-    return (
-      <div className="max-w-md mx-auto mt-16 p-8 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold mb-4">Welcome to AI Chat</h2>
-        <p className="text-gray-600 mb-6">Please enter a unique ID to continue</p>
-
-        <div className="mb-4">
-          <label htmlFor="userId" className="block text-sm font-medium text-gray-700 mb-1">
-            User ID
-          </label>
-          <input
-            type="text"
-            id="userId"
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            placeholder="Enter your user ID"
-            onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          />
-        </div>
-
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
-        <button
-          onClick={handleLogin}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          Continue
-        </button>
-      </div>
-    );
-  }
-
-  // Chat Interface component with sidebar
-  function ChatInterface({ userId }) {
-    const [sessions, setSessions] = useState([]);
-    const [currentSession, setCurrentSession] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    // Load sessions from the backend API
-    useEffect(() => {
-      fetchSessions();
-    }, [userId]);
-
-    const fetchSessions = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/users/${userId}/sessions`);
-
-        if (!response.ok) {
-          throw new Error(`HTTP error ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // Transform the API response to match the expected format
-        const transformedSessions = data.sessions.map(session => ({
-          id: session.sessionId,
-          title: `Conversation from ${formatDate(session.creationDate)}`,
-          timestamp: new Date(session.creationDate).toISOString(),
-          conversationHistory: session.messages.map(msg => ({
-            type: msg.origin,  // convert 'origin' to 'type'
-            message: msg.message
-          }))
-        }));
-
-        setSessions(transformedSessions || []);
-      } catch (err) {
-        console.error("Error fetching sessions:", err);
-        setError("Failed to load your previous conversations");
-        // Set empty array as fallback
-        setSessions([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Utility function to format timestamps
-    const formatDate = (timestamp) => {
-      const date = new Date(timestamp);
-      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    };
-
-    // Create new session
-    const createNewSession = () => {
-      const newSession = {
-        id: uuidv4(),
-        title: "New Conversation",
-        timestamp: new Date().toISOString(),
-        conversationHistory: []
-      };
-
-      setSessions([newSession, ...sessions]);
-      setCurrentSession(newSession);
-    };
-
-    // Open existing session
-    const openSession = (session) => {
-      setCurrentSession(session);
-    };
-
-    // Save session (local update after backend interaction)
-    const saveSession = (updatedSession) => {
-      const updatedSessions = sessions.map(s =>
-        s.id === updatedSession.id ? updatedSession : s
-      );
-
-      setSessions(updatedSessions);
-      setCurrentSession(updatedSession);
-    };
-
-    return (
-      <div className="h-full flex">
-        {/* Sidebar - Sessions List */}
-        <div className="relative border-r overflow-y-auto w-80">
-          <div className="p-4 border-b">
-            <button
-              onClick={createNewSession}
-              className="w-full py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              New Chat
-            </button>
-          </div>
-
-          <div className="overflow-y-auto">
-            {loading ? (
-              <div className="text-center p-8 text-gray-500">
-                <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Loading...
-              </div>
-            ) : error ? (
-              <div className="text-center p-8 text-red-500">
-                {error}
-                <p className="mt-2 text-gray-500">Try creating a new chat.</p>
-              </div>
-            ) : sessions.length === 0 ? (
-              <div className="text-center p-8 text-gray-500">
-                No conversations yet. Start a new chat!
-              </div>
-            ) : (
-              <ul className="divide-y divide-gray-200">
-                {sessions.map((session) => (
-                  <li
-                    key={session.id}
-                    className={`p-4 hover:bg-gray-50 cursor-pointer ${
-                      currentSession && currentSession.id === session.id
-                        ? 'bg-blue-50 border-l-4 border-blue-500'
-                        : ''
-                    }`}
-                    onClick={() => openSession(session)}
+              <div className="h-full flex items-center justify-center bg-gray-50">
+                <div className="text-center p-8">
+                  <h3 className="text-xl font-medium text-gray-700 mb-2">Welcome to the Ask Akka Chat</h3>
+                  <p className="text-gray-500 mb-4">Select a conversation from the sidebar or start a new chat</p>
+                  <button
+                    onClick={createNewSession}
+                    className="py-2 px-6 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1 overflow-hidden">
-                        <h3 className="font-medium truncate">{session.title}</h3>
-                        <p className="text-sm text-gray-500 truncate-2">
-                          {session.conversationHistory && session.conversationHistory.length > 0
-                            ? session.conversationHistory[session.conversationHistory.length - 1].message.substring(0, 100) + (session.conversationHistory[session.conversationHistory.length - 1].message.length > 100 ? '...' : '')
-                            : "Empty conversation"}
-                        </p>
-                      </div>
-                      <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
-                        {new Date(session.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    New Chat
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
-        {/* Main Chat Area */}
-        <div className="flex-1">
-          {currentSession ? (
-            <ChatScreen
-              session={currentSession}
-              saveSession={saveSession}
-              userId={userId}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center bg-gray-50">
-              <div className="text-center p-8">
-                <h3 className="text-xl font-medium text-gray-700 mb-2">Welcome to the Ask Akka Chat</h3>
-                <p className="text-gray-500 mb-4">Select a conversation from the sidebar or start a new chat</p>
-                <button
-                  onClick={createNewSession}
-                  className="py-2 px-6 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  New Chat
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // Chat Screen component
-  function ChatScreen({ session, saveSession, userId }) {
-    const [messageInput, setMessageInput] = useState("");
-    const [messages, setMessages] = useState([]);
-    const [isTyping, setIsTyping] = useState(false);
-    const [title, setTitle] = useState(session.title);
-    const [isEditingTitle, setIsEditingTitle] = useState(false);
-    const [error, setError] = useState(null);
+    // Chat Screen component
+    function ChatScreen({ session, saveSession, userId }) {
+      const [messageInput, setMessageInput] = useState("");
+      const [messages, setMessages] = useState([]);
+      const [isTyping, setIsTyping] = useState(false);
+      const [title, setTitle] = useState(session.title);
+      const [isEditingTitle, setIsEditingTitle] = useState(false);
+      const [error, setError] = useState(null);
 
-    const messagesEndRef = useRef(null);
-    const messageAreaRef = useRef(null);
+      const messagesEndRef = useRef(null);
+      const messageAreaRef = useRef(null);
 
-    // Initialize messages from session
-    useEffect(() => {
-      setMessages(session.conversationHistory || []);
-      setTitle(session.title);
-    }, [session]);
+      // Initialize messages from session
+      useEffect(() => {
+        setMessages(session.conversationHistory || []);
+        setTitle(session.title);
+      }, [session]);
 
-    // Scroll to bottom when messages change
-    useEffect(() => {
-      if (messagesEndRef.current) {
-        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, [messages]);
-
-    // Function to send message to backend API
-    const sendMessage = async (content) => {
-      if (!content.trim()) return;
-
-      // Add user message to UI immediately
-      const userMessage = { type: "user", message: content };
-      const updatedMessages = [...messages, userMessage];
-      setMessages(updatedMessages);
-      setError(null);
-
-      // Update session locally first
-      const updatedSession = {
-        ...session,
-        conversationHistory: updatedMessages,
-        timestamp: new Date().toISOString()
-      };
-
-      // If this is the first message, update the title
-      if (session.title === "New Conversation" && updatedMessages.length === 1) {
-        const newTitle = content.substring(0, 30) + (content.length > 30 ? "..." : "");
-        setTitle(newTitle);
-        updatedSession.title = newTitle;
-      }
-
-      saveSession(updatedSession);
-      setMessageInput("");
-      setIsTyping(true);
-
-      try {
-        // Prepare API request
-        const apiRequest = {
-          sessionId: session.id,
-          userId: userId,
-          question: content
-        };
-
-        // Call the backend API with SSE support
-        const response = await fetch('/api/ask', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(apiRequest)
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error ${response.status}`);
+      // Scroll to bottom when messages change
+      useEffect(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
+      }, [messages]);
 
-        // Handle SSE streaming response
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let aiResponseText = "";
+      // Function to send message to backend API
+      const sendMessage = async (content) => {
+        if (!content.trim()) return;
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
+        // Add user message to UI immediately
+        const userMessage = { type: "user", message: content };
+        const updatedMessages = [...messages, userMessage];
+        setMessages(updatedMessages);
+        setError(null);
 
-          // Decode the chunk and handle SSE format
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-          for (const line of lines) {
-            let parsedData = parseSSE(line);
-            if (parsedData) {
-              try {
-                // Try to JSON parse if it looks like a JSON string
-                if (parsedData.startsWith('"') && parsedData.endsWith('"')) {
-                  parsedData = JSON.parse(parsedData);
-                }
-              } catch (e) {
-                // If JSON parsing fails, just use the string as is
-                console.log("JSON parse failed, using raw string");
-              }
-
-              // Also try to handle the case where we get quoted strings with commas between them
-              if (typeof parsedData === 'string') {
-                // This regex finds patterns like "text","more text" and cleans them up
-                parsedData = parsedData.replace(/"([^"]*)"\s*,\s*"([^"]*)"/g, '$1$2');
-                // Remove any remaining quotes at beginning/end
-                parsedData = parsedData.replace(/^"|"$/g, '');
-              }
-
-              aiResponseText += parsedData;
-
-              // Update UI with current text
-              setMessages([
-                ...updatedMessages,
-                { type: "ai", message: aiResponseText }
-              ]);
-            }
-          }
-        }
-
-        // Final update once streaming is complete
-        setIsTyping(false);
-
-        // Save the completed conversation
-        const finalMessages = [
-          ...updatedMessages,
-          { type: "ai", message: aiResponseText }
-        ];
-
-        // Transform the data to match the backend format when saving
-        const apiSessionData = {
-          sessionId: session.id,
-          userId: userId,
-          messages: finalMessages.map(msg => ({
-            origin: msg.type,
-            message: msg.message,
-            timestamp: new Date().getTime()
-          })),
-          creationDate: new Date(session.timestamp).getTime()
-        };
-
-        // Here you would typically send this updated session to your backend
-        // For now, just update the local state
-        const finalSession = {
+        // Update session locally first
+        const updatedSession = {
           ...session,
-          conversationHistory: finalMessages,
+          conversationHistory: updatedMessages,
           timestamp: new Date().toISOString()
         };
 
-        saveSession(finalSession);
+        // If this is the first message, update the title
+        if (session.title === "New Conversation" && updatedMessages.length === 1) {
+          const newTitle = content.substring(0, 30) + (content.length > 30 ? "..." : "");
+          setTitle(newTitle);
+          updatedSession.title = newTitle;
+        }
 
-      } catch (err) {
-        console.error("Error sending message:", err);
-        setIsTyping(false);
-        setError("Failed to get a response. Please try again.");
-      }
-    };
-
-    // Handle title update
-    const updateTitle = () => {
-      if (title.trim() !== session.title) {
-        const updatedSession = {
-          ...session,
-          title: title.trim()
-        };
         saveSession(updatedSession);
-      }
-      setIsEditingTitle(false);
-    };
+        setMessageInput("");
+        setIsTyping(true);
 
-    return (
-      <div className="chat-container">
-        <div className="header-area p-4 border-b flex items-center">
-          {isEditingTitle ? (
-            <div className="flex-1 flex">
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="flex-1 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-                onBlur={updateTitle}
-                onKeyPress={(e) => e.key === 'Enter' && updateTitle()}
-              />
-            </div>
-          ) : (
-            <h2
-              className="text-xl font-semibold flex-1 cursor-pointer hover:text-blue-600"
-              onClick={() => setIsEditingTitle(true)}
-              title="Click to edit conversation title"
-            >
-              {title}
-            </h2>
-          )}
-        </div>
+        try {
+          // Prepare API request
+          const apiRequest = {
+            sessionId: session.id,
+            userId: userId,
+            question: content
+          };
 
-        <div className="message-area bg-gray-50" ref={messageAreaRef}>
-          {messages.length === 0 ? (
-            <div className="text-center p-8 text-gray-500">
-              Start a new conversation!
-            </div>
-          ) : (
-            <div className="chat-message-wrapper">
-              {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`chat-message ${msg.type === 'user' ? 'user-message' : 'ai-message'}`}
-                >
-                  <div dangerouslySetInnerHTML={{ __html: marked.parse(msg.message) }}></div>
-                </div>
-              ))}
-              {isTyping && (
-                <div className="chat-message ai-message typing-animation">
+          // Call the backend API with SSE support
+          const response = await fetch('/api/ask', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(apiRequest)
+          });
 
-                </div>
-              )}
-              {error && (
-                <div className="text-center p-2 text-red-500 text-sm">
-                  {error}
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
+          if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+          }
 
-        <div className="input-area p-4 border-t">
-          <div className="relative">
-              <textarea
-                className="w-full px-4 py-2 pr-12 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                placeholder="Type your message..."
-                rows="2"
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage(messageInput);
+          // Handle SSE streaming response
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let aiResponseText = "";
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            // Decode the chunk and handle SSE format
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+            for (const line of lines) {
+              let parsedData = parseSSE(line);
+              if (parsedData) {
+                try {
+                  // Try to JSON parse if it looks like a JSON string
+                  if (parsedData.startsWith('"') && parsedData.endsWith('"')) {
+                    parsedData = JSON.parse(parsedData);
                   }
-                }}
+                } catch (e) {
+                  // If JSON parsing fails, just use the string as is
+                  console.log("JSON parse failed, using raw string");
+                }
+
+                // Also try to handle the case where we get quoted strings with commas between them
+                if (typeof parsedData === 'string') {
+                  // This regex finds patterns like "text","more text" and cleans them up
+                  parsedData = parsedData.replace(/"([^"]*)"\s*,\s*"([^"]*)"/g, '$1$2');
+                  // Remove any remaining quotes at beginning/end
+                  parsedData = parsedData.replace(/^"|"$/g, '');
+                }
+
+                aiResponseText += parsedData;
+
+                // Update UI with current text
+                setMessages([
+                  ...updatedMessages,
+                  { type: "ai", message: aiResponseText }
+                ]);
+              }
+            }
+          }
+
+          // Final update once streaming is complete
+          setIsTyping(false);
+
+          // Save the completed conversation
+          const finalMessages = [
+            ...updatedMessages,
+            { type: "ai", message: aiResponseText }
+          ];
+
+          // Transform the data to match the backend format when saving
+          const apiSessionData = {
+            sessionId: session.id,
+            userId: userId,
+            messages: finalMessages.map(msg => ({
+              origin: msg.type,
+              message: msg.message,
+              timestamp: new Date().getTime()
+            })),
+            creationDate: new Date(session.timestamp).getTime()
+          };
+
+          // Here you would typically send this updated session to your backend
+          // For now, just update the local state
+          const finalSession = {
+            ...session,
+            conversationHistory: finalMessages,
+            timestamp: new Date().toISOString()
+          };
+
+          saveSession(finalSession);
+
+        } catch (err) {
+          console.error("Error sending message:", err);
+          setIsTyping(false);
+          setError("Failed to get a response. Please try again.");
+        }
+      };
+
+      // Handle title update
+      const updateTitle = () => {
+        if (title.trim() !== session.title) {
+          const updatedSession = {
+            ...session,
+            title: title.trim()
+          };
+          saveSession(updatedSession);
+        }
+        setIsEditingTitle(false);
+      };
+
+      return (
+        <div className="chat-container">
+          <div className="header-area p-4 border-b flex items-center">
+            {isEditingTitle ? (
+              <div className="flex-1 flex">
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="flex-1 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                  onBlur={updateTitle}
+                  onKeyPress={(e) => e.key === 'Enter' && updateTitle()}
+                />
+              </div>
+            ) : (
+              <h2
+                className="text-xl font-semibold flex-1 cursor-pointer hover:text-blue-600"
+                onClick={() => setIsEditingTitle(true)}
+                title="Click to edit conversation title"
+              >
+                {title}
+              </h2>
+            )}
+          </div>
+
+          <div className="message-area bg-gray-50" ref={messageAreaRef}>
+            {messages.length === 0 ? (
+              <div className="text-center p-8 text-gray-500">
+                Start a new conversation!
+              </div>
+            ) : (
+              <div className="chat-message-wrapper">
+                {messages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`chat-message ${msg.type === 'user' ? 'user-message' : 'ai-message'}`}
+                  >
+                    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(unwrapMarkdownFences(msg.message))) }}></div>
+                  </div>
+                ))}
+                {isTyping && (
+                  <div className="chat-message ai-message typing-animation">
+
+                  </div>
+                )}
+                {error && (
+                  <div className="text-center p-2 text-red-500 text-sm">
+                    {error}
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          <div className="input-area p-4 border-t">
+            <div className="relative">
+                <textarea
+                  className="w-full px-4 py-2 pr-12 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Type your message..."
+                  rows="2"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage(messageInput);
+                    }
+                  }}
+                  disabled={isTyping}
+                ></textarea>
+              <button
+                className={`absolute right-3 bottom-3 send-button ${isTyping ? 'text-gray-400' : 'text-blue-600 hover:text-blue-800'} focus:outline-none`}
+                onClick={() => sendMessage(messageInput)}
                 disabled={isTyping}
-              ></textarea>
-            <button
-              className={`absolute right-3 bottom-3 send-button ${isTyping ? 'text-gray-400' : 'text-blue-600 hover:text-blue-800'} focus:outline-none`}
-              onClick={() => sendMessage(messageInput)}
-              disabled={isTyping}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // Render the app
-  ReactDOM.render(<App />, document.getElementById('root'));
+    // Render the app
+    ReactDOM.render(<App />, document.getElementById('root'));
 </script>
 </body>
 </html>
