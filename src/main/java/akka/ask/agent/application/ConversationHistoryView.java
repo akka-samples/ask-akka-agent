@@ -59,11 +59,9 @@ public class ConversationHistoryView extends View {
     }
 
     private Effect<Session> userMessage(SessionMemoryEntity.Event.UserMessageAdded added) {
-      Message newMessage = new Message(
-        added.message(),
-        "user",
-        added.timestamp().toEpochMilli()
-      );
+      String currentMessage = added.message();
+      String modifiedMessage = currentMessage.split("(?i)Answer using the following information:", 2)[0].trim();
+      Message newMessage = new Message(modifiedMessage, "user", added.timestamp().toEpochMilli());
       var rowState = rowStateOrNew(userId(), sessionId());
       return effects().updateRow(rowState.add(newMessage));
     }
