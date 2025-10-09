@@ -43,6 +43,9 @@ jobs:
         with:
           jvm: temurin:1.21
 
+      - name: Setup global resolver
+        run: ./.github/setup_global_resolver.sh
+
       - name: mvn verify
         run: |-
           mvn verify --no-transfer-progress
